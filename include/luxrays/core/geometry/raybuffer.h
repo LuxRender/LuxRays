@@ -82,10 +82,12 @@ public:
 	}
 
 	size_t ReserveRay() {
+		assert (currentFreeRayIndex < size);
 		return currentFreeRayIndex++;
 	}
 
 	size_t AddRay(const Ray &ray) {
+		assert (currentFreeRayIndex < size);
 		rays[currentFreeRayIndex] = ray;
 
 		return currentFreeRayIndex++;
@@ -103,11 +105,11 @@ public:
 		return currentFreeRayIndex;
 	}
 
-	bool IsFull() {
+	bool IsFull() const {
 		return (currentFreeRayIndex >= size);
 	}
 
-	size_t LeftSpace() {
+	size_t LeftSpace() const {
 		return size - currentFreeRayIndex;
 	}
 

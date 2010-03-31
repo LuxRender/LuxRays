@@ -25,13 +25,14 @@
 #include "smalllux.h"
 #include "light.h"
 #include "scene.h"
+#include "volume.h"
 
 class RenderingConfig;
 
 class Path {
 public:
 	enum PathState {
-		EYE_VERTEX, NEXT_VERTEX, ONLY_SHADOW_RAYS
+		EYE_VERTEX, EYE_VERTEX_VOLUME_STEP, NEXT_VERTEX, ONLY_SHADOW_RAYS
 	};
 
 	Path(Scene *scene) {
@@ -41,6 +42,10 @@ public:
 		lightColor = new Spectrum[shadowRayCount];
 		shadowRay = new Ray[shadowRayCount];
 		currentShadowRayIndex = new unsigned int[shadowRayCount];
+		if (scene->volumeIntegrator)
+			volumeComp = new VolumeComputation(scene->volumeIntegrator);
+		else
+			volumeComp = NULL;
 	}
 
 	~Path() {
@@ -48,6 +53,8 @@ public:
 		delete[] lightColor;
 		delete[] shadowRay;
 		delete[] currentShadowRayIndex;
+
+		delete volumeComp;
 	}
 
 	void Init(Scene *scene, Sampler *sampler) {
@@ -62,24 +69,64 @@ public:
 		specularBounce = true;
 	}
 
-	void FillRayBuffer(RayBuffer *rayBuffer) {
-		if (state != ONLY_SHADOW_RAYS)
-			currentPathRayIndex = rayBuffer->AddRay(pathRay);
+	bool FillRayBuffer(Scene *scene, RayBuffer *rayBuffer) {
+		const unsigned int leftSpace = rayBuffer->LeftSpace();
+		// Check if the there is enough free space in the RayBuffer
+		if (((state == EYE_VERTEX) && (1 > leftSpace)) ||
+				((state == EYE_VERTEX_VOLUME_STEP) && (volumeComp->GetRayCount() + 1 > leftSpace)) ||
+				((state == ONLY_SHADOW_RAYS) && (tracedShadowRayCount > leftSpace)) ||
+				((state == NEXT_VERTEX) && (tracedShadowRayCount + 1 > leftSpace)))
+			return false;
 
-		if ((state == NEXT_VERTEX) || (state == ONLY_SHADOW_RAYS)) {
-			for (unsigned int i = 0; i < tracedShadowRayCount; ++i)
-				currentShadowRayIndex[i] = rayBuffer->AddRay(shadowRay[i]);
+		if (state == EYE_VERTEX_VOLUME_STEP) {
+			volumeComp->AddRays(rayBuffer);
+		} else {
+			if (state != ONLY_SHADOW_RAYS)
+				currentPathRayIndex = rayBuffer->AddRay(pathRay);
+
+			if ((state == NEXT_VERTEX) || (state == ONLY_SHADOW_RAYS)) {
+				for (unsigned int i = 0; i < tracedShadowRayCount; ++i)
+					currentShadowRayIndex[i] = rayBuffer->AddRay(shadowRay[i]);
+			}
 		}
+
+		return true;
 	}
 
 	void AdvancePath(Scene *scene, Sampler *sampler, const RayBuffer *rayBuffer,
 			SampleBuffer *sampleBuffer) {
-		const RayHit *rayHit = rayBuffer->GetRayHit(currentPathRayIndex);
+		// Select the path ray hit
+		const RayHit *rayHit;
+		if ((state == EYE_VERTEX) && scene->volumeIntegrator) {
+			rayHit = rayBuffer->GetRayHit(currentPathRayIndex);
 
+			Ray volumeRay(pathRay.o, pathRay.d, 0.f, (rayHit->index == 0xffffffffu) ? std::numeric_limits<float>::infinity() : rayHit->t);
+			scene->volumeIntegrator->GenerateLiRays(scene, &sample, volumeRay, volumeComp);
+			radiance += volumeComp->GetEmittedLight();
+
+			if (volumeComp->GetRayCount() > 0) {
+				// Do the EYE_VERTEX_VOLUME_STEP
+				state = EYE_VERTEX_VOLUME_STEP;
+				eyeHit = *(rayBuffer->GetRayHit(currentPathRayIndex));
+				return;
+			}
+		} else if (state == EYE_VERTEX_VOLUME_STEP) {
+			// Add scattered light
+			radiance += throughput * volumeComp->CollectResults(rayBuffer);
+
+			rayHit = &eyeHit;
+		} else
+			rayHit = rayBuffer->GetRayHit(currentPathRayIndex);
+
+		// Finish direct light sampling
 		if (((state == NEXT_VERTEX) || (state == ONLY_SHADOW_RAYS)) && (tracedShadowRayCount > 0)) {
 			for (unsigned int i = 0; i < tracedShadowRayCount; ++i) {
 				const RayHit *shadowRayHit = rayBuffer->GetRayHit(currentShadowRayIndex[i]);
 				if (shadowRayHit->index == 0xffffffffu) {
+					// Adjust path troughput if partecipating media is present
+					if (scene->volumeIntegrator)
+						lightColor[i] *= scene->volumeIntegrator->Transmittance(shadowRay[i]);
+
 					// Nothing was hit, light is visible
 					radiance += lightColor[i] / lightPdf[i];
 				}
@@ -90,6 +137,14 @@ public:
 		depth++;
 
 		const bool missed = (rayHit->index == 0xffffffffu);
+
+		// Adjust path troughput if partecipating media is present
+		if (scene->volumeIntegrator) {
+			Ray volumeRay(pathRay.o, pathRay.d, 0.f, missed ? std::numeric_limits<float>::infinity() : rayHit->t);
+
+			throughput *= scene->volumeIntegrator->Transmittance(volumeRay);
+		}
+
 		if (missed || (state == ONLY_SHADOW_RAYS) || (depth >= scene->maxPathDepth)) {
 			if (missed && scene->infiniteLight && (scene->useInfiniteLightBruteForce || specularBounce)) {
 				// Add the light emitted by the infinite light
@@ -118,7 +173,11 @@ public:
 			if (specularBounce) {
 				// Only TriangleLight can be directly hit
 				const TriangleLight *tLight = (TriangleLight *)triMat;
-				const Spectrum Le = tLight->Le(scene->objects, -pathRay.d);
+				Spectrum Le = tLight->Le(scene->objects, -pathRay.d);
+
+				// Adjust path troughput if partecipating media is present
+				if (scene->volumeIntegrator)
+					throughput *= scene->volumeIntegrator->Transmittance(pathRay);
 
 				radiance += Le * throughput;
 			}
@@ -182,7 +241,7 @@ public:
 						for (unsigned int i = 0; i < scene->shadowRayCount; ++i) {
 							// Select a point on the light surface
 							lightColor[tracedShadowRayCount] = light->Sample_L(
-									scene->objects, hitPoint, shadeN,
+									scene->objects, hitPoint, &shadeN,
 									sample.GetLazyValue(), sample.GetLazyValue(), sample.GetLazyValue(),
 									&lightPdf[tracedShadowRayCount], &shadowRay[tracedShadowRayCount]);
 
@@ -214,7 +273,7 @@ public:
 
 						// Select a point on the light surface
 						lightColor[tracedShadowRayCount] = light->Sample_L(
-								scene->objects, hitPoint, shadeN,
+								scene->objects, hitPoint, &shadeN,
 								sample.GetLazyValue(), sample.GetLazyValue(), sample.GetLazyValue(),
 								&lightPdf[tracedShadowRayCount], &shadowRay[tracedShadowRayCount]);
 
@@ -291,6 +350,7 @@ public:
 		state = NEXT_VERTEX;
 	}
 
+private:
 	static unsigned int GetMaxShadowRaysCount(const Scene *scene) {
 		switch (scene->lightStrategy) {
 			case ALL_UNIFORM:
@@ -303,7 +363,6 @@ public:
 		}
 	}
 
-private:
 	void CalcNextStep(Scene *scene, Sampler *sampler, const RayBuffer *rayBuffer,
 		SampleBuffer *sampleBuffer);
 
@@ -315,9 +374,14 @@ private:
 	float *lightPdf;
 	Spectrum *lightColor;
 
+	// Used to save eye hit during EYE_VERTEX_VOLUME_STEP
+	RayHit eyeHit;
+
 	Ray pathRay, *shadowRay;
 	unsigned int currentPathRayIndex, *currentShadowRayIndex;
 	unsigned int tracedShadowRayCount;
+	VolumeComputation *volumeComp;
+
 	PathState state;
 	bool specularBounce;
 };
