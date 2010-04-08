@@ -35,7 +35,7 @@ message(STATUS "Building mode: " ${CMAKE_BUILD_TYPE})
 
 # The version number.
 set(LUXRAYS_VERSION_MAJOR 0)
-set(LUXRAYS_VERSION_MINOR 1alpha3dev)
+set(LUXRAYS_VERSION_MINOR 1alpha4dev)
 
 set(LUXRAYS_SOURCE_DIR src)
 set(LUXRAYS_INCLUDE_DIR include)
@@ -157,7 +157,10 @@ endif(APPLE)
 
 set(CMAKE_CXX_FLAGS_DEBUG "-Wall -fPIC -O0 -g")
 # NOTE: QBVH can not be compiled with -O3 because of a GCC bug
-set(CMAKE_CXX_FLAGS_RELEASE "-DNDEBUG -Wall -fPIC -O2 -ftree-vectorize -msse -msse2 -msse3 -mssse3 -fvariable-expansion-in-unroller")
+set(CMAKE_CXX_FLAGS_RELEASE "-DNDEBUG -Wall -fPIC -O3 -ftree-vectorize -msse -msse2 -msse3 -mssse3 -fvariable-expansion-in-unroller")
+# The QBVH accelerator needs to be compiled with much reduced optimizations
+# otherwise gcc produces incorrect code and ruins the render on 64bits machines
+SET_SOURCE_FILES_PROPERTIES(${LUXRAYS_SOURCE_DIR}/accelerators/qbvhaccel.cpp COMPILE_FLAGS "-O2")
 
 #OSX-flags by jensverwiebe
 #set(CMAKE_CXX_FLAGS_RELEASE "-DNDEBUG -Wall -fPIC -O3 -ftree-vectorize -msse -msse2 -msse3 -mssse3 -fvariable-expansion-in-unroller -cl-fast-relaxed-math -cl-mad-enable")
@@ -225,7 +228,7 @@ add_subdirectory(samples/smallluxgpu)
 
 set(CMAKE_INSTALL_PREFIX .)
 #set(LUXRAYS_BIN_SAMPLES_DIR "luxrays-v${LUXRAYS_VERSION_MAJOR}.${LUXRAYS_VERSION_MINOR}")
-set(LUXRAYS_BIN_SAMPLES_DIR "slg-v1.5beta1")
+set(LUXRAYS_BIN_SAMPLES_DIR "slg-v1.5beta2dev")
 
 ADD_CUSTOM_COMMAND(
     OUTPUT "${LUXRAYS_BIN_SAMPLES_DIR}"

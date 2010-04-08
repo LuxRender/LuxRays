@@ -197,10 +197,11 @@ Scene::Scene(Context *ctx, const bool lowLatency, const string &fileName, Film *
 			if (meshObject->GetUVs() == NULL)
 				throw runtime_error("PLY object " + plyFileName + " is missing UV coordinates for texture mapping");
 
-			TextureMap *tm = texMapCache.GetTextureMap(args.at(1));
+			TexMapInstance *tm = texMapCache.GetTexMapInstance(args.at(1));
 			for (unsigned int i = 0; i < meshObject->GetTotalTriangleCount(); ++i) {
 				triangleTexMaps.push_back(tm);
 				triangleBumpMaps.push_back(NULL);
+				triangleNormalMaps.push_back(NULL);
 			}
 		} else {
 			// Check for if there is a texture map associated to the object with the new syntax
@@ -210,7 +211,7 @@ Scene::Scene(Context *ctx, const bool lowLatency, const string &fileName, Film *
 				if (meshObject->GetUVs() == NULL)
 					throw runtime_error("PLY object " + plyFileName + " is missing UV coordinates for texture mapping");
 
-				TextureMap *tm = texMapCache.GetTextureMap(texMap);
+				TexMapInstance *tm = texMapCache.GetTexMapInstance(texMap);
 				for (unsigned int i = 0; i < meshObject->GetTotalTriangleCount(); ++i)
 					triangleTexMaps.push_back(tm);
 			} else
@@ -224,13 +225,28 @@ Scene::Scene(Context *ctx, const bool lowLatency, const string &fileName, Film *
 				if (meshObject->GetUVs() == NULL)
 					throw runtime_error("PLY object " + plyFileName + " is missing UV coordinates for bump mapping");
 
-				TextureMap *tm = texMapCache.GetTextureMap(bumpMap);
+				const float scale = scnProp.GetFloat(key + ".bumpmap.scale", 1.f);
+
+				BumpMapInstance *bm = texMapCache.GetBumpMapInstance(bumpMap, scale);
 				for (unsigned int i = 0; i < meshObject->GetTotalTriangleCount(); ++i)
-					triangleBumpMaps.push_back(tm);
+					triangleBumpMaps.push_back(bm);
 			} else
 				for (unsigned int i = 0; i < meshObject->GetTotalTriangleCount(); ++i)
 					triangleBumpMaps.push_back(NULL);
 
+			// Check for if there is a normal map associated to the object
+			const string normalMap = scnProp.GetString(key + ".normalmap", "");
+			if (normalMap != "") {
+				// Check if the object has UV coords
+				if (meshObject->GetUVs() == NULL)
+					throw runtime_error("PLY object " + plyFileName + " is missing UV coordinates for normal mapping");
+
+				NormalMapInstance *nm = texMapCache.GetNormalMapInstance(normalMap);
+				for (unsigned int i = 0; i < meshObject->GetTotalTriangleCount(); ++i)
+					triangleNormalMaps.push_back(nm);
+			} else
+				for (unsigned int i = 0; i < meshObject->GetTotalTriangleCount(); ++i)
+					triangleNormalMaps.push_back(NULL);
 		}
 	}
 
@@ -240,7 +256,7 @@ Scene::Scene(Context *ctx, const bool lowLatency, const string &fileName, Film *
 
 	const vector<string> ilParams = scnProp.GetStringVector("scene.infinitelight.file", "");
 	if (ilParams.size() > 0) {
-		TextureMap *tex = texMapCache.GetTextureMap(ilParams.at(0));
+		TexMapInstance *tex = texMapCache.GetTexMapInstance(ilParams.at(0));
 
 		// Check if I have to use InfiniteLightBF method
 		if (scnProp.GetInt("scene.infinitelight.usebruteforce", 0)) {
