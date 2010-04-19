@@ -185,20 +185,7 @@ void keyFunc(unsigned char key, int x, int y) {
 	switch (key) {
 		case 'p': {
 			std::string fileName = config->cfg.GetString("image.filename", "image.png");
-			std::cerr << "Saving " << fileName << std::endl;
-			if ((fileName.length() >= 4) && (fileName.substr(fileName.length()-4) == ".png")) {
-				std::cerr << "Using PNG file format" << std::endl;
-				config->scene->camera->film->SavePNG(fileName);
-			} else if ((fileName.length() >= 4) && (fileName.substr(fileName.length()-4) == ".ppm")) {
-				std::cerr << "Using PPM file format" << std::endl;
-				config->scene->camera->film->SavePPM(fileName);
-			} else if ((fileName.length() >= 4) && (fileName.substr(fileName.length()-4) == ".exr")) {
-				std::cerr << "Using EXR file format" << std::endl;
-				config->scene->camera->film->SaveEXR(fileName);
-			} else {
-				std::cerr << "Unknown image format extension, using PNG" << std::endl;
-				config->scene->camera->film->SavePNG(fileName);
-			}
+			config->scene->camera->film->Save(fileName);
 			break;
 		}
 		case 27: { // Escape key
@@ -266,10 +253,16 @@ void keyFunc(unsigned char key, int x, int y) {
 			config->ReInit(false);
 			break;
 		case 'n':
-			config->screenRefreshInterval = max(50u, config->screenRefreshInterval - 50);
+			if (config->screenRefreshInterval > 1000)
+				config->screenRefreshInterval = max(1000u, config->screenRefreshInterval - 1000);
+			else
+				config->screenRefreshInterval = max(50u, config->screenRefreshInterval - 50);
 			break;
 		case 'm':
-			config->screenRefreshInterval += 50;
+			if (config->screenRefreshInterval >= 1000)
+				config->screenRefreshInterval += 1000;
+			else
+				config->screenRefreshInterval += 50;
 			break;
 		case 'i':
 			config->SetShadowRays(-1);

@@ -33,10 +33,14 @@
 
 Scene::Scene(Context *ctx, const bool lowLatency, const string &fileName, Film *film) {
 	maxPathDepth = 3;
+
 	shadowRayCount = 1;
+	lightStrategy = ONE_UNIFORM;
+
+	rrStrategy = PROBABILITY;
 	rrDepth = 2;
 	rrProb = 0.5f;
-	lightStrategy = ONE_UNIFORM;
+	rrImportanceCap = 0.125f;
 
 	cerr << "Reading scene: " << fileName << endl;
 
@@ -131,6 +135,14 @@ Scene::Scene(Context *ctx, const bool lowLatency, const string &fileName, Film *
 			const Spectrum Kr(vf.at(3), vf.at(4), vf.at(5));
 
 			MatteMetalMaterial *mat = new MatteMetalMaterial(Kd, Kr, vf.at(6), vf.at(7) != 0.f);
+			materialIndices[matName] = materials.size();
+			materials.push_back(mat);
+		} else if (matType == "archglass") {
+			vf = GetParameters(scnProp, "scene.materials." + matType + "." + matName, 8, "1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0");
+			const Spectrum Krfl(vf.at(0), vf.at(1), vf.at(2));
+			const Spectrum Ktrn(vf.at(3), vf.at(4), vf.at(5));
+
+			ArchGlassMaterial *mat = new ArchGlassMaterial(Krfl, Ktrn, vf.at(6) != 0.f, vf.at(7) != 0.f);
 			materialIndices[matName] = materials.size();
 			materials.push_back(mat);
 		} else

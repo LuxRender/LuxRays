@@ -24,6 +24,9 @@
 cmake_minimum_required(VERSION 2.6)
 project(LuxRays)
 
+SET(LUXRAYS_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+SET(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${LUXRAYS_CMAKE_DIR}")
+
 # The supported kind of builds: Release or Debug
 #SET(CMAKE_BUILD_TYPE "Debug")
 #SET(CMAKE_BUILD_TYPE "Release")
@@ -35,7 +38,7 @@ message(STATUS "Building mode: " ${CMAKE_BUILD_TYPE})
 
 # The version number.
 set(LUXRAYS_VERSION_MAJOR 0)
-set(LUXRAYS_VERSION_MINOR 1alpha4dev)
+set(LUXRAYS_VERSION_MINOR 1alpha5dev)
 
 set(LUXRAYS_SOURCE_DIR src)
 set(LUXRAYS_INCLUDE_DIR include)
@@ -105,49 +108,20 @@ endif(Boost_FOUND)
 
 #############################################################################
 #
-# PNG Libraries
+# FreeImage Libraries
 #
 #############################################################################
 
-find_package(PNG)
+find_package(FreeImage REQUIRED)
 
-if(PNG_FOUND)
-    message(STATUS "PNG include directory: " "${PNG_INCLUDE_DIR}")
-    message(STATUS "PNG libraries: " "${PNG_LIBRARIES}")
-else(PNG_FOUND)
-	message(FATAL_ERROR "Could not find PNG Library")
-endif(PNG_FOUND)
+if(FREEIMAGE_FOUND)
+    message(STATUS "FreeImage library directory: " ${FREEIMAGE_LIBRARIES})
+    message(STATUS "FreeImage include directory: " ${FREEIMAGE_INCLUDE_PATH})
+else(FREEIMAGE_FOUND)
+    message(FATAL_ERROR "Could not find FreeImage")
+endif(FREEIMAGE_FOUND)
 
-#############################################################################
-#
-# EXR Libraries
-#
-#############################################################################
-
-find_path(OPENEXR_INCLUDE_DIR
-        ImfXdr.h
-        PATHS
-        /usr/local/include/OpenEXR
-        /usr/include/OpenEXR
-        /sw/include/OpenEXR
-        /opt/local/include/OpenEXR
-        /opt/csw/include/OpenEXR
-        /opt/include/OpenEXR
-)
-
-if(OPENEXR_INCLUDE_DIR)
-    message(STATUS "OpenEXR include directory: " "${OPENEXR_INCLUDE_DIR}")
-else(OPENEXR_INCLUDE_DIR)
-	message(FATAL_ERROR "Could not find OpenEXR Library")
-endif(OPENEXR_INCLUDE_DIR)
-
-include_directories("${OPENEXR_INCLUDE_DIR}")
-
-if(APPLE)
-   SET(OPENEXR_LIBRARIES Half IlmImf Iex Imath IlmThread)
-else(APPLE)
-   SET(OPENEXR_LIBRARIES Half IlmImf Iex Imath)
-endif(APPLE)
+include_directories("${FREEIMAGE_INCLUDE_PATH}")
 
 #############################################################################
 #
@@ -229,7 +203,7 @@ add_subdirectory(samples/smallluxgpu)
 
 set(CMAKE_INSTALL_PREFIX .)
 #set(LUXRAYS_BIN_SAMPLES_DIR "luxrays-v${LUXRAYS_VERSION_MAJOR}.${LUXRAYS_VERSION_MINOR}")
-set(LUXRAYS_BIN_SAMPLES_DIR "slg-v1.5beta2dev")
+set(LUXRAYS_BIN_SAMPLES_DIR "slg-v1.5beta2")
 
 ADD_CUSTOM_COMMAND(
     OUTPUT "${LUXRAYS_BIN_SAMPLES_DIR}"

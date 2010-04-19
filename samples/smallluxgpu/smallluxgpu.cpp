@@ -30,9 +30,11 @@
 #include <boost/thread.hpp>
 #include <boost/filesystem.hpp>
 
+#include "smalllux.h"
 #include "displayfunc.h"
 #include "renderconfig.h"
 #include "path.h"
+#include "telnet.h"
 #include "luxrays/core/device.h"
 
 #if defined(__GNUC__)
@@ -78,6 +80,15 @@ void SLGTerminate(void) {
 }
 #endif
 
+void FreeImageErrorHandler(FREE_IMAGE_FORMAT fif, const char *message) {
+	printf("\n*** ");
+	if(fif != FIF_UNKNOWN)
+		printf("%s Format\n", FreeImage_GetFormatFromFIF(fif));
+
+	printf("%s", message);
+	printf(" ***\n");
+}
+
 static int BatchMode(double stopTime, unsigned int stopSPP) {
 	const double startTime = WallClockTime();
 
@@ -110,20 +121,7 @@ static int BatchMode(double stopTime, unsigned int stopSPP) {
 	}
 
 	std::string fileName = config->cfg.GetString("image.filename", "image.png");
-	std::cerr << "Saving " << fileName << std::endl;
-	if ((fileName.length() >= 4) && (fileName.substr(fileName.length() - 4) == ".png")) {
-		std::cerr << "Using PNG file format" << std::endl;
-		config->scene->camera->film->SavePNG(fileName);
-	} else if ((fileName.length() >= 4) && (fileName.substr(fileName.length() - 4) == ".ppm")) {
-		std::cerr << "Using PPM file format" << std::endl;
-		config->scene->camera->film->SavePPM(fileName);
-	} else if ((fileName.length() >= 4) && (fileName.substr(fileName.length() - 4) == ".exr")) {
-		std::cerr << "Using EXR file format" << std::endl;
-		config->scene->camera->film->SaveEXR(fileName);
-	} else {
-		std::cerr << "Unknown image format extension, using PNG" << std::endl;
-		config->scene->camera->film->SavePNG(fileName);
-	}
+	config->scene->camera->film->Save(fileName);
 
 	// Check if I have to save the film
 	const vector<string> filmNames = config->cfg.GetStringVector("screen.file", "");
@@ -159,11 +157,17 @@ int main(int argc, char *argv[]) {
 				" -b <enable high latency mode>" << std::endl <<
 				" -s [GPU workgroup size]" << std::endl <<
 				" -t [halt time in secs]" << std::endl <<
+				" -T <disable the telnet server" << std::endl <<
 				" -D [property name] [property value]" << std::endl <<
 				" -d [current directory path]" << std::endl <<
 				" -h <display this help and exit>" << std::endl;
 
+		// Initialize FreeImage Library
+		FreeImage_Initialise(TRUE);
+		FreeImage_SetOutputMessage(FreeImageErrorHandler);
+
 		bool batchMode = false;
+		bool telnetServerEnabled = true;
 		Properties cmdLineProp;
 		for (int i = 1; i < argc; i++) {
 			if (argv[i][0] == '-') {
@@ -195,6 +199,8 @@ int main(int argc, char *argv[]) {
 				else if (argv[i][1] == 's') cmdLineProp.SetString("opencl.gpu.workgroup.size", argv[++i]);
 
 				else if (argv[i][1] == 't') cmdLineProp.SetString("batch.halttime", argv[++i]);
+
+				else if (argv[i][1] == 'T') telnetServerEnabled = false;
 
 				else if (argv[i][1] == 'D') {
 					cmdLineProp.SetString(argv[i + 1], argv[i + 2]);
@@ -241,7 +247,12 @@ int main(int argc, char *argv[]) {
 			InitGlut(argc, argv, width, height);
 
 			config->Init();
-			RunGlut();
+
+			if (telnetServerEnabled) {
+				TelnetServer telnetServer(18081, config);
+				RunGlut();
+			} else
+				RunGlut();
 		}
 #if !defined(LUXRAYS_DISABLE_OPENCL)
 	} catch (cl::Error err) {

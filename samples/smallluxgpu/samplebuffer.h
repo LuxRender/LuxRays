@@ -19,12 +19,56 @@
  *   LuxRays website: http://www.luxrender.net                             *
  ***************************************************************************/
 
-#ifndef _SLG_CFG_H
-#define	_SLG_CFG_H
+#ifndef _SAMPLEBUFFER_H
+#define	_SAMPLEBUFFER_H
 
-// The configured options and settings for SmallLuxGPU
+#include "smalllux.h"
+#include "sampler.h"
 
-#define SLG_VERSION_MAJOR "1"
-#define SLG_VERSION_MINOR "5beta2"
+#define SAMPLE_BUFFER_SIZE (4096)
 
-#endif	/* _SLG_CFG_H */
+typedef struct {
+	float screenX, screenY;
+	Spectrum radiance;
+} SampleBufferElem;
+
+class SampleBuffer {
+public:
+	SampleBuffer(size_t bufferSize) : size(bufferSize) {
+		samples = new SampleBufferElem[size];
+		Reset();
+	}
+	~SampleBuffer() {
+		delete[] samples;
+	}
+
+	Sampler *GetSampler() const { return sampler; }
+	void Reset() { currentFreeSample = 0; };
+	bool IsFull() const { return (currentFreeSample >= size); }
+
+	void SplatSample(const Sample *sample, const Spectrum &radiance) {
+		// Safety check
+		if (radiance.IsNaN())
+			cerr << "Internal error: NaN in SampleBuffer::SplatSample()" << endl;
+		else {
+			SampleBufferElem *s = &samples[currentFreeSample++];
+
+			s->screenX = sample->screenX;
+			s->screenY = sample->screenY;
+			s->radiance = radiance;
+		}
+	}
+
+	SampleBufferElem *GetSampleBuffer() const { return samples; }
+
+	size_t GetSampleCount() const { return currentFreeSample; }
+
+private:
+	Sampler *sampler;
+	size_t size;
+	size_t currentFreeSample;
+
+	SampleBufferElem *samples;
+};
+
+#endif	/* _SAMPLEBUFFER_H */

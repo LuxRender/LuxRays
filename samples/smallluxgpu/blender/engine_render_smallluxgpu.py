@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 ###########################################################################
 #   Copyright (C) 1998-2010 by authors (see AUTHORS.txt )                 #
 #                                                                         #
@@ -20,7 +21,7 @@
 ###########################################################################
 #
 # SmallLuxGPU v1.5 render engine Blender 2.5 plug-in
-# v0.53
+# v0.54
 # Source: http://www.luxrender.net/forum/viewforum.php?f=34
 
 import bpy
@@ -97,7 +98,20 @@ def slg_properties():
       items=(("0", "ONE_UNIFORM", "ONE_UNIFORM"),
              ("1", "ALL_UNIFORM", "ALL_UNIFORM")),
       default="0")
-  
+
+  EnumProperty(attr="slg_sampleperpixel", name="Sample per pixel",
+      description="Select the desired number of samples per pixel for each pass",
+      items=(("1", "1x1", "1x1"),
+             ("2", "2x2", "2x2"),
+             ("3", "3x3", "3x3"),
+             ("4", "4x4", "4x4"),
+             ("5", "5x5", "5x5"),
+             ("6", "6x6", "6x6"),
+             ("7", "7x7", "7x7"),
+             ("8", "8x8", "8x8"),
+             ("9", "9x9", "9x9")),
+      default="4")
+
   EnumProperty(attr="slg_imageformat", name="Image File Format",
       description="Image file save format, saved with scene files (also Blender intermediary format)", 
       items=(("png", "PNG", "PNG"),
@@ -115,14 +129,24 @@ def slg_properties():
   IntProperty(attr="slg_shadowrays", name="Shadow Rays",
       description="Shadow rays",
       default=1, min=1, max=1024, soft_min=1, soft_max=1024)
-  
+
+  EnumProperty(attr="slg_rrstrategy", name="Russian Roulette Strategy",
+      description="Select the desired russian roulette strategy",
+      items=(("0", "Probability", "Probability"),
+             ("1", "Importance", "Importance")),
+      default="1")
+
   IntProperty(attr="slg_rrdepth", name="Russian Roulette Depth",
       description="Russian roulette depth",
       default=5, min=1, max=1024, soft_min=1, soft_max=1024)
-  
+
   FloatProperty(attr="slg_rrprob", name="Russian Roulette Probability",
       description="Russian roulette probability",
       default=0.75, min=0, max=1, soft_min=0, soft_max=1, precision=3)
+
+  FloatProperty(attr="slg_rrcap", name="Russian Roulette Importance Cap",
+      description="Russian roulette importance cap",
+      default=0.25, min=0.01, max=0.99, soft_min=0.1, soft_max=0.9, precision=3)
 
   # Participating Media properties
   BoolProperty(attr="slg_enablepartmedia", name="Participating Media",
@@ -255,7 +279,6 @@ class RENDER_PT_slrender_options(RenderButtonsPanel):
     col.active = scene.slg_export
     col.prop(scene, "slg_vnormals")
     col = split.column()
-    col.active = scene.slg_export
     col.prop(scene, "slg_infinitelightbf")
     split = layout.split()
     col = split.column()
@@ -270,9 +293,18 @@ class RENDER_PT_slrender_options(RenderButtonsPanel):
     col.prop(scene, "slg_shadowrays", text="Shadow")
     split = layout.split()
     col = split.column()
+    col.prop(scene, "slg_sampleperpixel")
+    split = layout.split()
+    col = split.column()
+    col.prop(scene, "slg_rrstrategy")
+    split = layout.split()
+    col = split.column()
     col.prop(scene, "slg_rrdepth", text="RR Depth")
     col = split.column()
-    col.prop(scene, "slg_rrprob", text="RR Prob")
+    if scene.slg_rrstrategy == "0":
+        col.prop(scene, "slg_rrprob", text="RR Prob")
+    else:
+        col.prop(scene, "slg_rrcap", text="RR Cap")
     split = layout.split()
     col = split.column()
     col.prop(scene, "slg_enablepartmedia")
@@ -337,7 +369,11 @@ class SmallLuxGPURender(bpy.types.RenderEngine):
   bl_label = "SmallLuxGPU"
   
   def _slgexport(self, scene, uv_flag, vc_flag, vn_flag, export, basepath, basename):
-    from Mathutils import Vector
+    # Depends on Blender version used
+    try:
+        from Mathutils import Vector
+    except ImportError:
+        from mathutils import Vector
     from itertools import zip_longest
 
     ff = lambda f:format(f,'.6f').rstrip('0')
@@ -376,9 +412,7 @@ class SmallLuxGPURender(bpy.types.RenderEngine):
           # Create render mesh
           try:
             print("SLGBP    Create render mesh: {}".format(obj.name))
-            # Change reverted until when newer Blender binaries are available for Linux
-            #mesh = obj.create_mesh(scene, True, 'RENDER')
-            mesh = obj.create_mesh(True, 'RENDER')
+            mesh = obj.create_mesh(scene, True, 'RENDER')
           except:
             pass
           else:
@@ -508,7 +542,13 @@ class SmallLuxGPURender(bpy.types.RenderEngine):
           elif m.emit:
             fscn.write('scene.materials.light.{} = {} {} {}\n'.format(mat,ff(m.emit*m.diffuse_color[0]),ff(m.emit*m.diffuse_color[1]),ff(m.emit*m.diffuse_color[2])))
           elif m.transparency and m.alpha < 1:
-            fscn.write('scene.materials.glass.{} = {} {} {} {} {} {} 1.0 {} {:b} {:b}\n'.format(mat,ff(m.raytrace_mirror.reflect_factor*m.mirror_color[0]),
+            if m.raytrace_transparency.ior == 1.0:
+              fscn.write('scene.materials.archglass.{} = {} {} {} {} {} {} {:b} {:b}\n'.format(mat,ff(m.raytrace_mirror.reflect_factor*m.mirror_color[0]),
+                ff(m.raytrace_mirror.reflect_factor*m.mirror_color[1]),ff(m.raytrace_mirror.reflect_factor*m.mirror_color[2]),
+                ff((1.0-m.alpha)*m.diffuse_color[0]),ff((1.0-m.alpha)*m.diffuse_color[1]),ff((1.0-m.alpha)*m.diffuse_color[2]),
+                m.raytrace_mirror.depth>0,m.raytrace_transparency.depth>0))
+            else:
+              fscn.write('scene.materials.glass.{} = {} {} {} {} {} {} 1.0 {} {:b} {:b}\n'.format(mat,ff(m.raytrace_mirror.reflect_factor*m.mirror_color[0]),
                 ff(m.raytrace_mirror.reflect_factor*m.mirror_color[1]),ff(m.raytrace_mirror.reflect_factor*m.mirror_color[2]),
                 ff((1.0-m.alpha)*m.diffuse_color[0]),ff((1.0-m.alpha)*m.diffuse_color[1]),ff((1.0-m.alpha)*m.diffuse_color[2]),
                 ff(m.raytrace_transparency.ior),m.raytrace_mirror.depth>0,m.raytrace_transparency.depth>0))
@@ -534,8 +574,11 @@ class SmallLuxGPURender(bpy.types.RenderEngine):
               fscn.write('scene.objects.{}.{}.texmap = {}\n'.format(mat,mat,bpy.utils.expandpath(texmap.texture.image.filename).replace('\\','/')))
             texbump = next((ts for ts in m.texture_slots if ts and ts.map_normal and hasattr(ts.texture,'image') and hasattr(ts.texture.image,'filename')), None)
             if texbump:
-              fscn.write('scene.objects.{}.{}.bumpmap = {}\n'.format(mat,mat,bpy.utils.expandpath(texbump.texture.image.filename).replace('\\','/')))
-              fscn.write('scene.objects.{}.{}.bumpmap.scale = {}\n'.format(mat,mat,texbump.normal_factor))
+              if texbump.texture.normal_map:
+                fscn.write('scene.objects.{}.{}.normalmap = {}\n'.format(mat,mat,bpy.utils.expandpath(texbump.texture.image.filename).replace('\\','/')))
+              else:
+                fscn.write('scene.objects.{}.{}.bumpmap = {}\n'.format(mat,mat,bpy.utils.expandpath(texbump.texture.image.filename).replace('\\','/')))
+                fscn.write('scene.objects.{}.{}.bumpmap.scale = {}\n'.format(mat,mat,texbump.normal_factor))
         if export or mats[i] in mfp:
           # Write out PLY
           fply = open('{}/{}.ply'.format(sdir,mat), 'wb')
@@ -649,9 +692,15 @@ class SmallLuxGPURender(bpy.types.RenderEngine):
     fcfg.write('screen.type = {}\n'.format(scene.slg_film_type))
     fcfg.write('path.maxdepth = {}\n'.format(scene.slg_tracedepth))
     fcfg.write('path.russianroulette.depth = {}\n'.format(scene.slg_rrdepth))
-    fcfg.write('path.russianroulette.prob = {}\n'.format(scene.slg_rrprob))
+    if scene.slg_rrstrategy == "0":
+        fcfg.write('path.russianroulette.strategy = 0\n')
+        fcfg.write('path.russianroulette.prob = {}\n'.format(scene.slg_rrprob))
+    else:
+        fcfg.write('path.russianroulette.strategy = 1\n')
+        fcfg.write('path.russianroulette.cap = {}\n'.format(scene.slg_rrcap))
     fcfg.write('path.lightstrategy = {}\n'.format(scene.slg_lightstrategy))
     fcfg.write('path.shadowrays = {}\n'.format(scene.slg_shadowrays))
+    fcfg.write('sampler.spp = {}\n'.format(scene.slg_sampleperpixel))
     fcfg.close()
 
     print('SLGBP ===> launch SLG: {} {}/{}/render.cfg'.format(exepath,basepath,basename))

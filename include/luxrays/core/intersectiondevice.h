@@ -93,6 +93,8 @@ public:
 		return 1.0;
 	}
 
+	void Intersect(RayBuffer *rayBuffer);
+
 	static size_t RayBufferSize;
 
 	friend class Context;
