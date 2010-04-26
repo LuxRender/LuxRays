@@ -28,7 +28,7 @@ typedef struct {
 	float weight;
 } SamplePixel;
 
-__kernel void PixelReset(__global SamplePixel *sampleFrameBuffer) {
+__kernel void PixelClearSampleFB(__global SamplePixel *sampleFrameBuffer) {
 	const unsigned int offset = get_global_id(0) + get_global_id(1) * get_global_size(0);
 
 	__global SamplePixel *sp = &sampleFrameBuffer[offset];

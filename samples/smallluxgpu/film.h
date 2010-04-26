@@ -94,7 +94,7 @@ public:
 		statsStartSampleTime = WallClockTime();
 	}
 
-	void InitGammaTable(const float gamma = 2.2f) {
+	virtual void InitGammaTable(const float gamma = 2.2f) {
 		float x = 0.f;
 		const float dx = 1.f / GAMMA_TABLE_SIZE;
 		for (unsigned int i = 0; i < GAMMA_TABLE_SIZE; ++i, x += dx)
@@ -339,9 +339,9 @@ public:
 		pixelCount = w * h;
 
 		sampleFrameBuffer = new SampleFrameBuffer(w, h);
-		sampleFrameBuffer->Reset();
+		sampleFrameBuffer->Clear();
 		frameBuffer = new FrameBuffer(w, h);
-		frameBuffer->Reset();
+		frameBuffer->Clear();
 
 		Film::Init(w, h);
 	}
@@ -349,7 +349,7 @@ public:
 	virtual void Reset() {
 		boost::mutex::scoped_lock lock(radianceMutex);
 
-		sampleFrameBuffer->Reset();
+		sampleFrameBuffer->Clear();
 
 		Film::Reset();
 	}
@@ -502,7 +502,7 @@ public:
 					sampleFrameBuffer->SetPixel(i, sp->radiance / (100.0f * weight), 0.01f);
 			}
 		} else
-			sampleFrameBuffer->Reset();
+			sampleFrameBuffer->Clear();
 
 		Film::Reset();
 	}
@@ -649,8 +649,12 @@ public:
 		Film::Init(w, h);
 	}
 
+	virtual void InitGammaTable(const float gamma = 2.2f) {
+		pixelDevice->SetGamma(gamma);
+	}
+
 	virtual void Reset() {
-		pixelDevice->Reset();
+		pixelDevice->ClearSampleFrameBuffer();
 		Film::Reset();
 	}
 

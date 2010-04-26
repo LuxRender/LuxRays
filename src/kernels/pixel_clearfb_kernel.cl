@@ -19,56 +19,17 @@
  *   LuxRays website: http://www.luxrender.net                             *
  ***************************************************************************/
 
-#ifndef _SAMPLEBUFFER_H
-#define	_SAMPLEBUFFER_H
-
-#include "smalllux.h"
-#include "sampler.h"
-
-#define SAMPLE_BUFFER_SIZE (4096)
-
 typedef struct {
-	float screenX, screenY;
-	Spectrum radiance;
-} SampleBufferElem;
+	float r, g, b;
+} Spectrum;
 
-class SampleBuffer {
-public:
-	SampleBuffer(size_t bufferSize) : size(bufferSize) {
-		samples = new SampleBufferElem[size];
-		Reset();
-	}
-	~SampleBuffer() {
-		delete[] samples;
-	}
+typedef Spectrum Pixel;
 
-	Sampler *GetSampler() const { return sampler; }
-	void Reset() { currentFreeSample = 0; };
-	bool IsFull() const { return (currentFreeSample >= size); }
+__kernel void PixelClearFB(__global Pixel *frameBuffer) {
+	const unsigned int offset = get_global_id(0) + get_global_id(1) * get_global_size(0);
 
-	void SplatSample(const Sample *sample, const Spectrum &radiance) {
-		// Safety check
-		if (radiance.IsNaN())
-			cerr << "Internal error: NaN in SampleBuffer::SplatSample()" << endl;
-		else {
-			SampleBufferElem *s = &samples[currentFreeSample++];
-
-			s->screenX = sample->screenX;
-			s->screenY = sample->screenY;
-			s->radiance = radiance;
-		}
-	}
-
-	SampleBufferElem *GetSampleBuffer() const { return samples; }
-
-	size_t GetSampleCount() const { return currentFreeSample; }
-
-private:
-	Sampler *sampler;
-	size_t size;
-	size_t currentFreeSample;
-
-	SampleBufferElem *samples;
-};
-
-#endif	/* _SAMPLEBUFFER_H */
+	__global Pixel *p = &frameBuffer[offset];
+	p->r = 0.f;
+	p->g = 0.f;
+	p->b = 0.f;
+}
