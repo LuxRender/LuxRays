@@ -190,12 +190,23 @@ template <class T> inline std::string ToString(const T& t) {
 	return ss.str();
 	}
 
-inline unsigned int RoundUp(const unsigned int a, const unsigned int b) {
+template <class T> inline T RoundUp(const T a, const T b) {
 	const unsigned int r = a % b;
 	if (r == 0)
 		return a;
 	else
 		return a + b - r;
+}
+
+template <class T> inline T RoundUpPow2(T v) {
+        v--;
+        v |= v >> 1;
+        v |= v >> 2;
+        v |= v >> 4;
+        v |= v >> 8;
+        v |= v >> 16;
+
+        return v+1;
 }
 
 inline void StringTrim(std::string &str) {

@@ -144,6 +144,7 @@ private:
 	static void IntersectionThread(OpenCLIntersectionDevice *renderDevice);
 
 	void TraceRayBuffer(RayBuffer *rayBuffer, cl::Event *event);
+	void FreeDataSetBuffers();
 
 	OpenCLDeviceDescription *deviceDesc;
 	boost::thread *intersectionThread;
@@ -159,10 +160,19 @@ private:
 	cl::Buffer *bvhBuff;
 
 	// QBVH fields
+
+	// QBVH with normal storage fields
 	cl::Kernel *qbvhKernel;
 	size_t qbvhWorkGroupSize;
 	cl::Buffer *qbvhBuff;
 	cl::Buffer *qbvhTrisBuff;
+
+	// QBVH with image storage fields
+	cl::Kernel *qbvhImageKernel;
+	size_t qbvhImageWorkGroupSize;
+
+	cl::Image2D *qbvhImageBuff;
+	cl::Image2D *qbvhTrisImageBuff;
 
 	cl::Buffer *raysBuff;
 	cl::Buffer *hitsBuff;
@@ -170,7 +180,7 @@ private:
 	RayBufferQueueO2O rayBufferQueue;
 	RayBufferQueue *externalRayBufferQueue;
 
-	bool reportedPermissionError;
+	bool reportedPermissionError, qbvhUseImage;
 };
 
 #endif

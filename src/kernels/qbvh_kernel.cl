@@ -36,7 +36,7 @@ typedef struct {
 typedef struct {
 	float t;
 	float b1, b2; // Barycentric coordinates of the hit point
-	unsigned int index;
+	uint index;
 } RayHit;
 
 typedef struct {
@@ -53,7 +53,7 @@ typedef struct {
 	float4 origx, origy, origz;
 	float4 edge1x, edge1y, edge1z;
 	float4 edge2x, edge2y, edge2z;
-	unsigned int primitives[4];
+	uint4 primitives;
 } QuadTiangle;
 
 typedef struct {
@@ -65,45 +65,45 @@ typedef struct {
 
 #define QBVHNode_IsLeaf(index) (index < 0)
 #define QBVHNode_IsEmpty(index) (index == emptyLeafNode)
-#define QBVHNode_NbQuadPrimitives(index) ((unsigned int)(((index >> 27) & 0xf) + 1))
+#define QBVHNode_NbQuadPrimitives(index) ((uint)(((index >> 27) & 0xf) + 1))
 #define QBVHNode_FirstQuadIndex(index) (index & 0x07ffffff)
 
 // Using invDir0/invDir1/invDir2 and sign0/sign1/sign2 instead of an
 // array because I dont' trust OpenCL compiler =)
-static int4 QBVHNode_BBoxIntersect(__global QBVHNode *node, const QuadRay *ray4,
+static int4 QBVHNode_BBoxIntersect(
+        const float4 bboxes_minX, const float4 bboxes_maxX,
+        const float4 bboxes_minY, const float4 bboxes_maxY,
+        const float4 bboxes_minZ, const float4 bboxes_maxZ,
+        const QuadRay *ray4,
 		const float4 invDir0, const float4 invDir1, const float4 invDir2,
 		const int signs0, const int signs1, const int signs2) {
 	float4 tMin = ray4->mint;
 	float4 tMax = ray4->maxt;
 
 	// X coordinate
-	tMin = max(tMin, (node->bboxes[signs0][0] - ray4->ox) * invDir0);
-	tMax = min(tMax, (node->bboxes[1 - signs0][0] - ray4->ox) * invDir0);
+	tMin = max(tMin, (bboxes_minX - ray4->ox) * invDir0);
+	tMax = min(tMax, (bboxes_maxX - ray4->ox) * invDir0);
 
 	// Y coordinate
-	tMin = max(tMin, (node->bboxes[signs1][1] - ray4->oy) * invDir1);
-	tMax = min(tMax, (node->bboxes[1 - signs1][1] - ray4->oy) * invDir1);
+	tMin = max(tMin, (bboxes_minY - ray4->oy) * invDir1);
+	tMax = min(tMax, (bboxes_maxY - ray4->oy) * invDir1);
 
 	// Z coordinate
-	tMin = max(tMin, (node->bboxes[signs2][2] - ray4->oz) * invDir2);
-	tMax = min(tMax, (node->bboxes[1 - signs2][2] - ray4->oz) * invDir2);
+	tMin = max(tMin, (bboxes_minZ - ray4->oz) * invDir2);
+	tMax = min(tMax, (bboxes_maxZ - ray4->oz) * invDir2);
 
 	// Return the visit flags
 	return  (tMax >= tMin);
 }
 
-static void QuadTriangle_Intersect(const __global QuadTiangle *qt, QuadRay *ray4, RayHit *rayHit) {
+static void QuadTriangle_Intersect(
+    const float4 origx, const float4 origy, const float4 origz,
+    const float4 edge1x, const float4 edge1y, const float4 edge1z,
+    const float4 edge2x, const float4 edge2y, const float4 edge2z,
+    const uint4 primitives,
+    QuadRay *ray4, RayHit *rayHit) {
 	//--------------------------------------------------------------------------
 	// Calc. b1 coordinate
-
-	// Read data from memory
-	const float4 edge1x = qt->edge1x;
-	const float4 edge1y = qt->edge1y;
-	const float4 edge1z = qt->edge1z;
-
-	const float4 edge2x = qt->edge2x;
-	const float4 edge2y = qt->edge2y;
-	const float4 edge2z = qt->edge2z;
 
 	const float4 s1x = (ray4->dy * edge2z) - (ray4->dz * edge2y);
 	const float4 s1y = (ray4->dz * edge2x) - (ray4->dx * edge2z);
@@ -111,9 +111,9 @@ static void QuadTriangle_Intersect(const __global QuadTiangle *qt, QuadRay *ray4
 
 	const float4 divisor = (s1x * edge1x) + (s1y * edge1y) + (s1z * edge1z);
 
-	const float4 dx = ray4->ox - qt->origx;
-	const float4 dy = ray4->oy - qt->origy;
-	const float4 dz = ray4->oz - qt->origz;
+	const float4 dx = ray4->ox - origx;
+	const float4 dy = ray4->oy - origy;
+	const float4 dz = ray4->oz - origz;
 
 	const float4 b1 = ((dx * s1x) + (dy * s1y) + (dz * s1z)) / divisor;
 
@@ -138,32 +138,37 @@ static void QuadTriangle_Intersect(const __global QuadTiangle *qt, QuadRay *ray4
     // The '&&' operator on int4 is still bugged in the ATI compiler
 	// It looks like other logic operators don't work on HD4xxx family too
 
-	unsigned int hit = 4;
+	uint hit = 4;
 	float _b1, _b2;
 	float maxt = ray4->maxt.s0;
+    uint index = 0xffffffff;
 	if ((divisor.s0 != 0.f) && (b0.s0 >= 0.f) && (b1.s0 >= 0.f) && (b2.s0 >= 0.f) && (t.s0 > ray4->mint.s0) && (t.s0 < maxt)) {
 		hit = 0;
 		maxt = t.s0;
 		_b1 = b1.s0;
 		_b2 = b2.s0;
+        index = primitives.s0;
 	}
 	if ((divisor.s1 != 0.f) && (b0.s1 >= 0.f) && (b1.s1 >= 0.f) && (b2.s1 >= 0.f) && (t.s1 > ray4->mint.s0) && (t.s1 < maxt)) {
 		hit = 1;
 		maxt = t.s1;
 		_b1 = b1.s1;
 		_b2 = b2.s1;
+        index = primitives.s1;
 	}
 	if ((divisor.s2 != 0.f) && (b0.s2 >= 0.f) && (b1.s2 >= 0.f) && (b2.s2 >= 0.f) && (t.s2 > ray4->mint.s0) && (t.s2 < maxt)) {
 		hit = 2;
 		maxt = t.s2;
 		_b1 = b1.s2;
 		_b2 = b2.s2;
+        index = primitives.s2;
 	}
 	if ((divisor.s3 != 0.f) && (b0.s3 >= 0.f) && (b1.s3 >= 0.f) && (b2.s3 >= 0.f) && (t.s3 > ray4->mint.s0) && (t.s3 < maxt)) {
 		hit = 3;
 		maxt = t.s3;
 		_b1 = b1.s3;
 		_b2 = b2.s3;
+        index = primitives.s3;
 	}
 
 	if (hit == 4)
@@ -174,15 +179,20 @@ static void QuadTriangle_Intersect(const __global QuadTiangle *qt, QuadRay *ray4
 	rayHit->t = maxt;
 	rayHit->b1 = _b1;
 	rayHit->b2 = _b2;
-	rayHit->index = qt->primitives[hit];
+	rayHit->index = index;
 }
 
 __kernel void Intersect(
 		__global Ray *rays,
 		__global RayHit *rayHits,
+#ifdef USE_IMAGE_STORAGE
+        __read_only image2d_t nodes,
+        __read_only image2d_t quadTris,
+#else
 		__global QBVHNode *nodes,
 		__global QuadTiangle *quadTris,
-		const unsigned int rayCount,
+#endif
+		const uint rayCount,
 		__local int *nodeStacks) {
 	// Select the ray to check
 	const int gid = get_global_id(0);
@@ -225,20 +235,58 @@ __kernel void Intersect(
 	__local int *nodeStack = &nodeStacks[24 * get_local_id(0)];
 	nodeStack[0] = 0; // first node to handle: root node
 
+#ifdef USE_IMAGE_STORAGE
+    const int quadTrisImageWidth = get_image_width(quadTris);
+
+    const int bboxes_minXIndex = (signs0 * 3);
+    const int bboxes_maxXIndex = ((1 - signs0) * 3);
+    const int bboxes_minYIndex = (signs1 * 3) + 1;
+    const int bboxes_maxYIndex = ((1 - signs1) * 3) + 1;
+    const int bboxes_minZIndex = (signs2 * 3) + 2;
+    const int bboxes_maxZIndex = ((1 - signs2) * 3) + 2;
+
+    const sampler_t imageSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP | CLK_FILTER_NEAREST;
+#endif
+
 	while (todoNode >= 0) {
 		const int nodeData = nodeStack[todoNode];
 		--todoNode;
 
 		// Leaves are identified by a negative index
 		if (!QBVHNode_IsLeaf(nodeData)) {
+#ifdef USE_IMAGE_STORAGE
+            // Read the node information from the image storage
+            const ushort inx = (nodeData >> 16) * 7;
+            const ushort iny = (nodeData & 0xffff);
+            const float4 bboxes_minX = as_float4(read_imageui(nodes, imageSampler, (int2)(inx + bboxes_minXIndex, iny)));
+            const float4 bboxes_maxX = as_float4(read_imageui(nodes, imageSampler, (int2)(inx + bboxes_maxXIndex, iny)));
+            const float4 bboxes_minY = as_float4(read_imageui(nodes, imageSampler, (int2)(inx + bboxes_minYIndex, iny)));
+            const float4 bboxes_maxY = as_float4(read_imageui(nodes, imageSampler, (int2)(inx + bboxes_maxYIndex, iny)));
+            const float4 bboxes_minZ = as_float4(read_imageui(nodes, imageSampler, (int2)(inx + bboxes_minZIndex, iny)));
+            const float4 bboxes_maxZ = as_float4(read_imageui(nodes, imageSampler, (int2)(inx + bboxes_maxZIndex, iny)));
+            const int4 children = as_int4(read_imageui(nodes, imageSampler, (int2)(inx + 6, iny)));
+
+			const int4 visit = QBVHNode_BBoxIntersect(
+                bboxes_minX, bboxes_maxX,
+                bboxes_minY, bboxes_maxY,
+                bboxes_minZ, bboxes_maxZ,
+                &ray4,
+				invDir0, invDir1, invDir2,
+				signs0, signs1, signs2);
+#else
 			__global QBVHNode *node = &nodes[nodeData];
-			const int4 visit = QBVHNode_BBoxIntersect(node, &ray4,
+            const int4 visit = QBVHNode_BBoxIntersect(
+                node->bboxes[signs0][0], node->bboxes[1 - signs0][0],
+                node->bboxes[signs1][1], node->bboxes[1 - signs1][1],
+                node->bboxes[signs2][2], node->bboxes[1 - signs2][2],
+                &ray4,
 				invDir0, invDir1, invDir2,
 				signs0, signs1, signs2);
 
 			const int4 children = node->children;
+#endif
 
-			// For some reason doing logic operations with int4 is very slow
+			// For some reason doing logic operations with int4 are very slow
 			nodeStack[todoNode + 1] = children.s3;
 			todoNode += (visit.s3 && !QBVHNode_IsEmpty(children.s3)) ? 1 : 0;
 			nodeStack[todoNode + 1] = children.s2;
@@ -249,11 +297,51 @@ __kernel void Intersect(
 			todoNode += (visit.s0 && !QBVHNode_IsEmpty(children.s0)) ? 1 : 0;
 		} else {
 			// Perform intersection
-			const unsigned int nbQuadPrimitives = QBVHNode_NbQuadPrimitives(nodeData);
-			const unsigned int offset = QBVHNode_FirstQuadIndex(nodeData);
+			const uint nbQuadPrimitives = QBVHNode_NbQuadPrimitives(nodeData);
+			const uint offset = QBVHNode_FirstQuadIndex(nodeData);
 
-			for (unsigned int primNumber = offset; primNumber < (offset + nbQuadPrimitives); ++primNumber)
-				QuadTriangle_Intersect(&quadTris[primNumber], &ray4, &rayHit);
+#ifdef USE_IMAGE_STORAGE
+            ushort inx = (offset >> 16) * 10;
+            ushort iny = (offset & 0xffff);
+#endif
+
+			for (uint primNumber = offset; primNumber < (offset + nbQuadPrimitives); ++primNumber) {
+#ifdef USE_IMAGE_STORAGE
+                const float4 origx = as_float4(read_imageui(quadTris, imageSampler, (int2)(inx++, iny)));
+                const float4 origy = as_float4(read_imageui(quadTris, imageSampler, (int2)(inx++, iny)));
+                const float4 origz = as_float4(read_imageui(quadTris, imageSampler, (int2)(inx++, iny)));
+                const float4 edge1x = as_float4(read_imageui(quadTris, imageSampler, (int2)(inx++, iny)));
+                const float4 edge1y = as_float4(read_imageui(quadTris, imageSampler, (int2)(inx++, iny)));
+                const float4 edge1z = as_float4(read_imageui(quadTris, imageSampler, (int2)(inx++, iny)));
+                const float4 edge2x = as_float4(read_imageui(quadTris, imageSampler, (int2)(inx++, iny)));
+                const float4 edge2y = as_float4(read_imageui(quadTris, imageSampler, (int2)(inx++, iny)));
+                const float4 edge2z = as_float4(read_imageui(quadTris, imageSampler, (int2)(inx++, iny)));
+                const uint4 primitives = read_imageui(quadTris, imageSampler, (int2)(inx++, iny));
+
+                if (inx >= quadTrisImageWidth) {
+                    inx = 0;
+                    iny++;
+                }
+#else
+                __global QuadTiangle *quadTri = &quadTris[primNumber];
+                const float4 origx = quadTri->origx;
+                const float4 origy = quadTri->origy;
+                const float4 origz = quadTri->origz;
+                const float4 edge1x = quadTri->edge1x;
+                const float4 edge1y = quadTri->edge1y;
+                const float4 edge1z = quadTri->edge1z;
+                const float4 edge2x = quadTri->edge2x;
+                const float4 edge2y = quadTri->edge2y;
+                const float4 edge2z = quadTri->edge2z;
+                const uint4 primitives = quadTri->primitives;
+#endif
+				QuadTriangle_Intersect(
+                    origx, origy, origz,
+                    edge1x, edge1y, edge1z,
+                    edge2x, edge2y, edge2z,
+                    primitives,
+                    &ray4, &rayHit);
+            }
 		}
 	}
 
