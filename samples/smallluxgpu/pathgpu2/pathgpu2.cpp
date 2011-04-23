@@ -155,6 +155,8 @@ void PathGPU2RenderThread::InitRenderGeometry() {
 		PathGPU2::Mesh newMeshDesc;
 		newMeshDesc.vertsOffset = 0;
 		newMeshDesc.trisOffset = 0;
+		memcpy(newMeshDesc.trans, Matrix4x4().m, sizeof(float[4][4]));
+		memcpy(newMeshDesc.invTrans, Matrix4x4().m, sizeof(float[4][4]));
 
 		PathGPU2::Mesh currentMeshDesc;
 
@@ -187,7 +189,6 @@ void PathGPU2RenderThread::InitRenderGeometry() {
 				memcpy(currentMeshDesc.invTrans, imesh->GetInvTransformation().GetMatrix().m, sizeof(float[4][4]));
 				mesh = imesh->GetExtTriangleMesh();
 			} else {
-				memcpy(newMeshDesc.invTrans, Matrix4x4().m, sizeof(float[4][4]));
 				currentMeshDesc = newMeshDesc;
 
 				newMeshDesc.vertsOffset += mesh->GetTotalVertexCount();
@@ -437,7 +438,7 @@ void PathGPU2RenderThread::InitRender() {
 	AcceleratorType accelType = scene->dataSet->GetAcceleratorType();
 
 	const unsigned int frameBufferPixelCount =
-		renderEngine->film->GetWidth() * renderEngine->film->GetHeight();
+		(renderEngine->film->GetWidth() + 2) * (renderEngine->film->GetHeight() + 2);
 
 	// Delete previous allocated frameBuffer
 	delete[] frameBuffer;
@@ -1219,8 +1220,7 @@ void PathGPU2RenderThread::InitRender() {
 			" -D PARAM_SEED=" << seed <<
 			" -D PARAM_MAX_PATH_DEPTH=" << renderEngine->maxPathDepth <<
 			" -D PARAM_RR_DEPTH=" << renderEngine->rrDepth <<
-			" -D PARAM_RR_CAP=" << renderEngine->rrImportanceCap << "f" <<
-			" -D PARAM_WORLD_RADIUS=" << (scene->dataSet->GetBSphere().rad * 1.01f) << "f"
+			" -D PARAM_RR_CAP=" << renderEngine->rrImportanceCap << "f"
 			;
 
 	switch (accelType) {
@@ -1546,8 +1546,7 @@ void PathGPU2RenderThread::InitRender() {
 	// Clear the frame buffer
 	initFBKernel->setArg(0, *frameBufferBuff);
 	oclQueue.enqueueNDRangeKernel(*initFBKernel, cl::NullRange,
-			cl::NDRange(RoundUp<unsigned int>(
-				renderEngine->film->GetWidth() * renderEngine->film->GetHeight(), initFBWorkGroupSize)),
+			cl::NDRange(RoundUp<unsigned int>(frameBufferPixelCount, initFBWorkGroupSize)),
 			cl::NDRange(initFBWorkGroupSize));
 
 	// Initialize the tasks buffer
@@ -1918,36 +1917,40 @@ void PathGPU2RenderEngine::UpdateFilmLockLess() {
 	elapsedTime = WallClockTime() - startTime;
 	const unsigned int imgWidth = film->GetWidth();
 	const unsigned int imgHeight = film->GetHeight();
-	const unsigned int pixelCount = imgWidth * imgHeight;
 
 	film->Reset();
 
-	for (unsigned int p = 0; p < pixelCount; ++p) {
-		Spectrum c;
-		float count = 0;
-		for (size_t i = 0; i < renderThreads.size(); ++i) {
-			c += renderThreads[i]->frameBuffer[p].c;
-			count += renderThreads[i]->frameBuffer[p].count;
-		}
+	for (unsigned int y = 0; y < imgHeight; ++y) {
+		for (unsigned int x = 0; x < imgWidth; ++x) {
+			const unsigned int pGPU = x + 1 + (y + 1) * imgWidth;
 
-		if (count > 0) {
-			const float scrX = p % imgWidth;
-			const float scrY = p / imgWidth;
-			c /= count;
-			sampleBuffer->SplatSample(scrX, scrY, c);
+			Spectrum c;
+			float count = 0;
+			for (size_t i = 0; i < renderThreads.size(); ++i) {
+				c += renderThreads[i]->frameBuffer[pGPU].c;
+				count += renderThreads[i]->frameBuffer[pGPU].count;
+			}
 
-			if (sampleBuffer->IsFull()) {
-				// Splat all samples on the film
-				film->SplatSampleBuffer(true, sampleBuffer);
-				sampleBuffer = film->GetFreeSampleBuffer();
+			if (count > 0) {
+				const unsigned int pCPU = x + y * imgWidth;
+				const float scrX = pCPU % imgWidth;
+				const float scrY = pCPU / imgWidth;
+				c /= count;
+				sampleBuffer->SplatSample(scrX, scrY, c);
+
+				if (sampleBuffer->IsFull()) {
+					// Splat all samples on the film
+					film->SplatSampleBuffer(true, sampleBuffer);
+					sampleBuffer = film->GetFreeSampleBuffer();
+				}
 			}
 		}
+	}
 
-		if (sampleBuffer->GetSampleCount() > 0) {
-			// Splat all samples on the film
-			film->SplatSampleBuffer(true, sampleBuffer);
-			sampleBuffer = film->GetFreeSampleBuffer();
-		}
+	if (sampleBuffer->GetSampleCount() > 0) {
+		// Splat all samples on the film
+		film->SplatSampleBuffer(true, sampleBuffer);
+		sampleBuffer = film->GetFreeSampleBuffer();
 	}
 
 	// Update the sample count statistic

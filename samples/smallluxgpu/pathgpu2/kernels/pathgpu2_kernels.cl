@@ -71,7 +71,7 @@ __kernel void InitFrameBuffer(
 		__global Pixel *frameBuffer
 		) {
 	const size_t gid = get_global_id(0);
-	if (gid >= PARAM_IMAGE_WIDTH * PARAM_IMAGE_HEIGHT)
+	if (gid >= (PARAM_IMAGE_WIDTH + 2) * (PARAM_IMAGE_HEIGHT + 2))
 		return;
 
 	__global Pixel *p = &frameBuffer[gid];
@@ -485,10 +485,10 @@ __kernel void AdvancePaths(
 						directLightPdf = 1.f;
 						break;
 					case MAT_MATTEMIRROR:
-						directLightPdf = 1.f / hitPointMat->param.matteMirror.mattePdf;
+						directLightPdf = hitPointMat->param.matteMirror.mattePdf;
 						break;
 					case MAT_MATTEMETAL:
-						directLightPdf = 1.f / hitPointMat->param.matteMetal.mattePdf;
+						directLightPdf = hitPointMat->param.matteMetal.mattePdf;
 						break;
 					case MAT_ALLOY: {
 						// Schilick's approximation
@@ -498,7 +498,7 @@ __kernel void AdvancePaths(
 
 						const float P = .25f + .5f * Re;
 
-						directLightPdf = (1.f - P) / (1.f - Re);
+						directLightPdf = 1.f - P;
 						break;
 					}
 					default:
@@ -821,60 +821,33 @@ Error: Huston, we have a problem !
 	}
 
 	if (pathState == PATH_STATE_DONE) {
-#if (PARAM_IMAGE_FILTER_TYPE == 0)
+#if (PARAM_SAMPLER_TYPE == 2)
 
-#if (PARAM_SAMPLER_TYPE == 0) || (PARAM_SAMPLER_TYPE == 1) || (PARAM_SAMPLER_TYPE == 3)
-		Spectrum radiance = sample->radiance;
-		SplatSample(frameBuffer, sample->pixelIndex, &radiance, 1.f);
-#elif (PARAM_SAMPLER_TYPE == 2)
-
-#if (PARAM_SAMPLER_TYPE != 0)
 		// Read the seed
 		Seed seed;
 		seed.s1 = task->seed.s1;
 		seed.s2 = task->seed.s2;
 		seed.s3 = task->seed.s3;
-#endif
 
 		Sampler_MLT_SplatSample(frameBuffer, &seed, sample);
 
-#if (PARAM_SAMPLER_TYPE != 0)
 		// Save the seed
 		task->seed.s1 = seed.s1;
 		task->seed.s2 = seed.s2;
 		task->seed.s3 = seed.s3;
-#endif
-
-#endif
 
 #else
 
-#if (PARAM_SAMPLER_TYPE == 0) || (PARAM_SAMPLER_TYPE == 1) || (PARAM_SAMPLER_TYPE == 3)
-		__global float *sampleData = &sample->u[IDX_SCREEN_X];
+#if (PARAM_IMAGE_FILTER_TYPE == 0)
+		Spectrum radiance = sample->radiance;
+		SplatSample(frameBuffer, sample->pixelIndex, &radiance, 1.f);
+#else
+		__global float *sampleData = &sample->u[0];
 		const float sx = sampleData[IDX_SCREEN_X] - .5f;
 		const float sy = sampleData[IDX_SCREEN_Y] - .5f;
 
 		Spectrum radiance = sample->radiance;
 		SplatSample(frameBuffer, sample->pixelIndex, sx, sy, &radiance, 1.f);
-#elif (PARAM_SAMPLER_TYPE == 2)
-
-#if (PARAM_SAMPLER_TYPE != 0)
-		// Read the seed
-		Seed seed;
-		seed.s1 = task->seed.s1;
-		seed.s2 = task->seed.s2;
-		seed.s3 = task->seed.s3;
-#endif
-
-		Sampler_MLT_SplatSample(frameBuffer, &seed, sample);
-
-#if (PARAM_SAMPLER_TYPE != 0)
-		// Save the seed
-		task->seed.s1 = seed.s1;
-		task->seed.s2 = seed.s2;
-		task->seed.s3 = seed.s3;
-#endif
-
 #endif
 
 #endif
