@@ -128,7 +128,9 @@ TextureMap::TextureMap(const std::string &fileName) {
 				bits += pitch;
 			}
 		} else if (bpp == 8) {
-			SDL_LOG("Converting 8bpp image to 24bpp");
+			SDL_LOG("Converting 8bpp image to 24bpp RGB texture map size: " << width << "x" << height << " (" <<
+					width * height * sizeof (Spectrum) / 1024 << "Kbytes)");
+
 			pixels = new Spectrum[width * height];
 			alpha = NULL;
 
