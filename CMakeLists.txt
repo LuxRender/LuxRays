@@ -30,6 +30,8 @@ MESSAGE(STATUS "CMAKE VERSION DETECTED " ${CMAKE_VERSION})
 # Fresh start
 cmake_minimum_required(VERSION 2.8)
 cmake_policy(VERSION 2.8)
+#Remove the following when the version check is at least 2.8.4
+SET(CMAKE_LEGACY_CYGWIN_WIN32 0)
 
 project(LuxRays)
 
@@ -66,6 +68,7 @@ include_directories("${LuxRays_INCLUDE_DIR}")
 if(NOT CMAKE_BUILD_TYPE)
 	set(CMAKE_BUILD_TYPE Release)
 endif(NOT CMAKE_BUILD_TYPE)
+SET(CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE} CACHE STRING "assure config" FORCE) # makes sure type is shown in cmake gui
 
 message(STATUS "Building mode: " ${CMAKE_BUILD_TYPE})
 

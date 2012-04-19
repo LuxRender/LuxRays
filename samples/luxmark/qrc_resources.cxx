@@ -1,8 +1,13 @@
 /****************************************************************************
 ** Resource object code
 **
+<<<<<<< /home/david/src/private/luxrays/samples/luxmark/qrc_resources.cxx
 ** Created: Thu Apr 19 09:57:36 2012
 **      by: The Resource Compiler for Qt version 4.7.4
+=======
+** Created: Tue Feb 14 22:25:50 2012
+**      by: The Resource Compiler for Qt version 4.7.4
+>>>>>>> /tmp/qrc_resources.cxx~other.lNjOSP
 **
 ** WARNING! All changes made in this file will be lost!
 *****************************************************************************/

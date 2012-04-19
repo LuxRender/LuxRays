@@ -153,7 +153,7 @@ class SLGBP:
                 # SLG requires extension, force one
                 SLGBP.image_filename += scene.render.file_extension
         else:
-            SLGBP.image_filename = '{}/{}/{}.{}'.format(SLGBP.spath,SLGBP.sname,SLGBP.sname,scene.slg.imageformat)
+            SLGBP.image_filename = '{}/{}/{}{}'.format(SLGBP.spath,SLGBP.sname,SLGBP.sname,scene.render.file_extension)
 
         # Check/create scene directory to hold scene files
         SLGBP.sfullpath = '{}/{}'.format(SLGBP.spath,SLGBP.sname)
@@ -214,6 +214,7 @@ class SLGBP:
             cfg['film.filter.type'] = '0'
         else:
             cfg['film.filter.type'] = scene.slg.film_filter_type
+        cfg['film.alphachannel.enable'] = format(scene.slg.alphachannel, 'b')
         cfg['screen.refresh.interval'] = format(scene.slg.refreshrate)
         cfg['renderengine.type'] = scene.slg.rendering_type
         cfg['sppm.lookup.type'] = scene.slg.sppmlookuptype
@@ -289,6 +290,7 @@ class SLGBP:
             if not SLGBP.live:
                 if hasattr(SLGBP.infinitelight.texture.image,'filepath'):
                     scn['scene.infinitelight.file'] = bpy.path.abspath(SLGBP.infinitelight.texture.image.filepath).replace('\\','/')
+                    scn['scene.infinitelight.gamma'] = ff(SLGBP.infinitelight.texture.slg_gamma)
                     portal = [m.name for m in bpy.data.materials if m.use_shadeless]
                     if portal:
                         portalpath = '{}/{}/{}.ply'.format(SLGBP.spath,SLGBP.sname,portal[0].replace('.','_'))
@@ -392,7 +394,7 @@ class SLGBP:
         scn = {}
         def objscn(plyn, matn, objn, mat, tm):
             if tm:
-                if bpy.app.build_revision > '42815':
+                if bpy.app.version[1] >= 62 : # matrix change between 2.61 and 2.62
                     scn['scene.objects.{}.{}.transformation'.format(matn,objn)] = '{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}'.format(
                         ff(tm[0][0]),ff(tm[1][0]),ff(tm[2][0]),ff(tm[3][0]),ff(tm[0][1]),ff(tm[1][1]),ff(tm[2][1]),ff(tm[3][1]),
                         ff(tm[0][2]),ff(tm[1][2]),ff(tm[2][2]),ff(tm[3][2]),ff(tm[0][3]),ff(tm[1][3]),ff(tm[2][3]),ff(tm[3][3]))
@@ -409,6 +411,7 @@ class SLGBP:
                     texmap = next((ts for ts in mat.texture_slots if ts and ts.use_map_color_diffuse and hasattr(ts.texture,'image') and hasattr(ts.texture.image,'filepath') and ts.use), None)
                     if texmap:
                         scn['scene.objects.{}.{}.texmap'.format(matn,objn)] = bpy.path.abspath(texmap.texture.image.filepath).replace('\\','/')
+                        scn['scene.objects.{}.{}.texmap.gamma'.format(matn,objn)] = ff(texmap.texture.slg_gamma)
                     texbump = next((ts for ts in mat.texture_slots if ts and ts.use_map_normal and hasattr(ts.texture,'image') and hasattr(ts.texture.image,'filepath') and ts.use), None)
                     if texbump:
                         if texbump.texture.use_normal_map:
@@ -595,11 +598,20 @@ class SLGBP:
                     else:
                         v = [vert.co[:] for vert in mesh.vertices]
                     vcd = []
-                    if scene.slg.vcolors and mesh.vertex_colors.active:
-                        vcd = mesh.vertex_colors.active.data
+                    if bpy.app.version[1] >= 62 and bpy.app.version[2] > 0: # bmesh adaption
+                        if scene.slg.vcolors and mesh.tessface_vertex_colors.active:
+                            vcd = mesh.tessface_vertex_colors.active.data
+                    else:
+                        if scene.slg.vcolors and mesh.vertex_colors.active:
+                            vcd = mesh.vertex_colors.active.data
                     uvd = []
-                    if scene.slg.vuvs and mesh.uv_textures.active:
-                        uvd = mesh.uv_textures.active.data
+                    if bpy.app.version[1] >= 62 and bpy.app.version[2] > 0: # bmesh adaption
+                        if scene.slg.vuvs and mesh.tessface_uv_textures.active:
+                            uvd = mesh.tessface_uv_textures.active.data
+                    else:
+                        if scene.slg.vuvs and mesh.uv_textures.active:
+                            uvd = mesh.uv_textures.active.data
+
                     if obj in instobjs:
                         # Correlate obj mat slots with plymat slots
                         onomat = instobjs[obj]
@@ -1016,7 +1028,7 @@ class SLGLive(bpy.types.Operator):
                     SLGBP.livetrigger(context.scene, SLGBP.LIVEALL)
                     SLGBP.msg = 'SLG Live! rendering animation frame: ' + str(context.scene.frame_current) + " (ESC to abort)"
                 SLGBP.msgrefresh()
-            
+
         return {'PASS_THROUGH'}
 
     @classmethod
@@ -1076,6 +1088,7 @@ class SLGLiveAnim(bpy.types.Operator):
     # def execute(self, context):
     def invoke(self, context, event):
         SLGBP.liveanim = True
+        SLGBP.msg = 'SLG Live! rendering animation frame: ' + str(context.scene.frame_start) + " (ESC to abort)"
         context.scene.frame_set(context.scene.frame_start)
         SLGBP.livetrigger(context.scene, SLGBP.LIVEALL)
         SLGBP.animlasttime = time()
@@ -1318,7 +1331,7 @@ def slg_add_properties():
                ("1", "Gaussian", "Gaussian filter")),
         default="1")
 
-    SLGSettings.film_tonemap_type = EnumProperty(
+    SLGSettings.film_tonemap_type = EnumProperty(name="Tonemap Type",
         description="Select the desired film tonemap type",
         items=(("-1", "Tonemapping", "Tonemapping"),
                ("0", "Linear tonemapping", "Linear tonemapping"),
@@ -1364,12 +1377,9 @@ def slg_add_properties():
                ("9", "9x9", "9x9")),
         default="4")
 
-    SLGSettings.imageformat = EnumProperty(name="Image File Format",
-        description="Image file save format, saved with scene files (also Blender intermediary format)",
-        items=(("png", "PNG", "PNG"),
-               ("exr", "OpenEXR", "OpenEXR"),
-               ("jpg", "JPG", "JPG")), # A lot more formats supported...
-        default="png")
+    SLGSettings.alphachannel = BoolProperty(name="Alpha Background",
+        description="Render background as transparent alpha channel in image file",
+        default=False)
 
     SLGSettings.tracedepth = IntProperty(name="Max Path Trace Depth",
         description="Maximum path tracing depth",
@@ -1482,6 +1492,11 @@ def slg_add_properties():
         description="SmallLuxGPU - Force export of PLY (mesh data) related to this material",
         default=False)
 
+    # Add SLG Image Texture Gamma
+    bpy.types.ImageTexture.slg_gamma = FloatProperty(name="SLG Gamma",
+        description="SmallLuxGPU gamma input value",
+        default=2.2, min=0, max=10, soft_min=0, soft_max=10, precision=3)
+
     # Add Objet Force Instance
     bpy.types.Object.slg_forceinst = BoolProperty(name="SLG Force Instance",
         description="SmallLuxGPU - Force export of instance for this object",
@@ -1540,6 +1555,11 @@ def slg_forceply(self, context):
         if SLGBP.live:
             SLGBP.livemat = context.material
             SLGBP.livetrigger(context.scene, SLGBP.LIVEMTL)
+
+# Add SLG Image Texture Gamma
+def slg_gamma(self, context):
+    if context.scene.render.engine == 'SLG_RENDER':
+        self.layout.split().column().prop(context.texture, "slg_gamma")
 
 # Add Object Force Instance on Object panel
 def slg_forceinst(self, context):
@@ -1606,7 +1626,7 @@ class AddPresetSLG(bl_operators.presets.AddPresetBase, bpy.types.Operator):
         "scene.slg.reinhard_burn",
         "scene.slg.reinhard_prescale",
         "scene.slg.reinhard_postscale",
-        "scene.slg.imageformat",
+        "scene.slg.alphachannel",
         "scene.slg.film_gamma",
         "scene.slg.sppmdirectlight",
         "scene.slg.sppmlookuptype",
@@ -1736,7 +1756,7 @@ class RENDER_PT_slg_settings(bpy.types.Panel, RenderButtonsPanel):
             col.prop(slg, "reinhard_postscale")
         split = layout.split()
         col = split.column()
-        col.prop(slg, "imageformat")
+        col.prop(slg, "alphachannel")
         col = split.column()
         col.prop(slg, "film_gamma")
         if slg.rendering_type == '4':
@@ -1898,17 +1918,19 @@ def register():
     bpy.types.OBJECT_PT_transform.append(slg_forceinst)
     bpy.types.WORLD_PT_environment_lighting.append(slg_livescn)
     bpy.types.TEXTURE_PT_mapping.append(slg_livescn)
+    bpy.types.TEXTURE_PT_colors.append(slg_gamma)
     bpy.types.DATA_PT_sunsky.append(slg_livescn)
     bpy.types.VIEW3D_HT_header.append(slg_operators)
     bpy.types.INFO_MT_render.append(slg_rendermenu)
 
 def unregister():
-    bpy.types.Scene.RemoveProperty("slg")
+    del bpy.types.Scene.slg
     bpy.types.DATA_PT_camera_dof.remove(slg_lensradius)
     bpy.types.MATERIAL_PT_diffuse.remove(slg_forceply)
     bpy.types.OBJECT_PT_transform.remove(slg_forceinst)
     bpy.types.WORLD_PT_environment_lighting.remove(slg_livescn)
     bpy.types.TEXTURE_PT_mapping.remove(slg_livescn)
+    bpy.types.TEXTURE_PT_colors.remove(slg_gamma)
     bpy.types.DATA_PT_sunsky.remove(slg_livescn)
     bpy.types.VIEW3D_HT_header.remove(slg_operators)
     bpy.types.INFO_MT_render.remove(slg_rendermenu)

@@ -54,18 +54,31 @@ public:
 
 	void Save(const std::string &fileName);
 
+	void EnableAlphaChannel(const bool alphaChannel) {
+		enableAlphaChannel = alphaChannel;
+	}
+	bool IsAlphaChannelEnabled() const { return enableAlphaChannel; }
+
 	//--------------------------------------------------------------------------
 
-	void AddRadiance(const unsigned int x, const unsigned int y, const Spectrum radiance, const float weight) {
+	void AddRadiance(const unsigned int x, const unsigned int y, const Spectrum &radiance, const float weight) {
 		const unsigned int offset = x + y * width;
 		SamplePixel *sp = &(sampleFrameBuffer->GetPixels()[offset]);
 
 		sp->radiance += radiance;
 		sp->weight += weight;
 	}
+	
+	void AddAlpha(const unsigned int x, const unsigned int y, const float alpha) {
+		const unsigned int offset = x + y * width;
+		AlphaPixel *ap = &(alphaFrameBuffer->GetPixels()[offset]);
+
+		ap->alpha += alpha;
+	}
 
 	void SplatPreview(const SampleBufferElem *sampleElem);
 	void SplatFiltered(const SampleBufferElem *sampleElem);
+	void SplatFilteredAlpha(const float x, const float y, const float a);
 
 	static size_t SampleBufferSize;
 
@@ -78,6 +91,10 @@ protected:
 
 	void AddSampleBuffer(const FilterType type, SampleBuffer *sampleBuffer);
 
+	const AlphaFrameBuffer *GetAlphaFrameBuffer() {
+		return alphaFrameBuffer;
+	}
+	
 	void SplatRadiance(const Spectrum radiance, const unsigned int x, const unsigned int y, const float weight) {
 		const unsigned int offset = x + y * width;
 		SamplePixel *sp = &(sampleFrameBuffer->GetPixels()[offset]);
@@ -94,7 +111,15 @@ protected:
 		sp->weight += 1.f;
 	}
 
+	void SplatAlpha(const float alpha, const unsigned int x, const unsigned int y, const float weight) {
+		const unsigned int offset = x + y * width;
+		AlphaPixel *sp = &(alphaFrameBuffer->GetPixels()[offset]);
+
+		sp->alpha += weight * alpha;
+	}
+
 	SampleFrameBuffer *sampleFrameBuffer;
+	AlphaFrameBuffer *alphaFrameBuffer;
 	FrameBuffer *frameBuffer;
 
 	std::vector<SampleBuffer *> sampleBuffers;
@@ -102,6 +127,8 @@ protected:
 
 	Filter *filter;
 	FilterLUTs *filterLUTs;
+
+	bool enableAlphaChannel;
 };
 
 } }

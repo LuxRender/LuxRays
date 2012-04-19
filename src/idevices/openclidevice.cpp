@@ -148,22 +148,22 @@ void OpenCLIntersectionDevice::FreeDataSetBuffers() {
 			bvhBuff = NULL;
 		}
 
+		if (qbvhImageBuff) {
+			deviceDesc->usedMemory -= qbvhImageBuff->getInfo<CL_MEM_SIZE>();
+			delete qbvhImageBuff;
+			qbvhImageBuff = NULL;
+			deviceDesc->usedMemory -= qbvhTrisImageBuff->getInfo<CL_MEM_SIZE>();
+			delete qbvhTrisImageBuff;
+			qbvhTrisImageBuff = NULL;
+		}
+		
 		if (qbvhBuff) {
-			if (qbvhUseImage) {
-				deviceDesc->usedMemory -= qbvhImageBuff->getInfo<CL_MEM_SIZE>();
-				delete qbvhImageBuff;
-				qbvhImageBuff = NULL;
-				deviceDesc->usedMemory -= qbvhTrisImageBuff->getInfo<CL_MEM_SIZE>();
-				delete qbvhTrisImageBuff;
-				qbvhTrisImageBuff = NULL;
-			} else {
-				deviceDesc->usedMemory -= qbvhBuff->getInfo<CL_MEM_SIZE>();
-				delete qbvhBuff;
-				qbvhBuff = NULL;
-				deviceDesc->usedMemory -= qbvhTrisBuff->getInfo<CL_MEM_SIZE>();
-				delete qbvhTrisBuff;
-				qbvhTrisBuff = NULL;
-			}
+			deviceDesc->usedMemory -= qbvhBuff->getInfo<CL_MEM_SIZE>();
+			delete qbvhBuff;
+			qbvhBuff = NULL;
+			deviceDesc->usedMemory -= qbvhTrisBuff->getInfo<CL_MEM_SIZE>();
+			delete qbvhTrisBuff;
+			qbvhTrisBuff = NULL;
 		}
 
 		if (mqbvhBuff) {
@@ -234,6 +234,7 @@ void OpenCLIntersectionDevice::SetDataSet(const DataSet *newDataSet) {
 					throw err;
 				}
 
+				delete bvhKernel;
 				bvhKernel = new cl::Kernel(program, "Intersect");
 				bvhKernel->getWorkGroupInfo<size_t>(oclDevice, CL_KERNEL_WORK_GROUP_SIZE, &bvhWorkGroupSize);
 				LR_LOG(deviceContext, "[OpenCL device::" << deviceName << "] BVH kernel work group size: " << bvhWorkGroupSize);
@@ -303,6 +304,7 @@ void OpenCLIntersectionDevice::SetDataSet(const DataSet *newDataSet) {
 						throw err;
 					}
 
+					delete qbvhKernel;
 					qbvhKernel = new cl::Kernel(program, "Intersect");
 					qbvhKernel->getWorkGroupInfo<size_t>(oclDevice, CL_KERNEL_WORK_GROUP_SIZE, &qbvhWorkGroupSize);
 					LR_LOG(deviceContext, "[OpenCL device::" << deviceName << "] QBVH kernel work group size: " << qbvhWorkGroupSize);
@@ -338,6 +340,7 @@ void OpenCLIntersectionDevice::SetDataSet(const DataSet *newDataSet) {
 						throw err;
 					}
 
+					delete qbvhImageKernel;
 					qbvhImageKernel = new cl::Kernel(program, "Intersect");
 					qbvhImageKernel->getWorkGroupInfo<size_t>(oclDevice, CL_KERNEL_WORK_GROUP_SIZE, &qbvhImageWorkGroupSize);
 					LR_LOG(deviceContext, "[OpenCL device::" << deviceName << "] QBVH Image Storage kernel work group size: " << qbvhImageWorkGroupSize);
@@ -464,6 +467,11 @@ void OpenCLIntersectionDevice::SetDataSet(const DataSet *newDataSet) {
 				// Set arguments
 				qbvhImageKernel->setArg(2, *qbvhImageBuff);
 				qbvhImageKernel->setArg(3, *qbvhTrisImageBuff);
+				// Check if we have enough local memory
+				if (qbvhStackSize * qbvhImageWorkGroupSize * sizeof(cl_int) >
+						deviceDesc->GetOCLDevice().getInfo<CL_DEVICE_LOCAL_MEM_SIZE>())
+					throw std::runtime_error("Not enough OpenCL device local memory available for the required work group size"
+							" and QBVH stack depth (try to reduce the work group size and/or the stack depth)");
 				qbvhImageKernel->setArg(5, qbvhStackSize * qbvhImageWorkGroupSize * sizeof(cl_int), NULL);
 			} else {
 				LR_LOG(deviceContext, "[OpenCL device::" << deviceName << "] QBVH buffer size: " << (sizeof(QBVHNode) * qbvh->nNodes / 1024) << "Kbytes");
@@ -483,6 +491,12 @@ void OpenCLIntersectionDevice::SetDataSet(const DataSet *newDataSet) {
 				// Set arguments
 				qbvhKernel->setArg(2, *qbvhBuff);
 				qbvhKernel->setArg(3, *qbvhTrisBuff);
+				// Check if we have enough local memory
+				if (qbvhStackSize * qbvhWorkGroupSize * sizeof(cl_int) >
+						deviceDesc->GetOCLDevice().getInfo<CL_DEVICE_LOCAL_MEM_SIZE>())
+					throw std::runtime_error("Not enough OpenCL device local memory available for the required work group size"
+							" and QBVH stack depth (try to reduce the work group size and/or the stack depth)");
+
 				qbvhKernel->setArg(5, qbvhStackSize * qbvhWorkGroupSize * sizeof(cl_int), NULL);
 			}
 			break;

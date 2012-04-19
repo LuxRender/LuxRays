@@ -66,6 +66,7 @@ PathOCLRenderThread::PathOCLRenderThread(const unsigned int index, const unsigne
 	started = false;
 	editMode = false;
 	frameBuffer = NULL;
+	alphaFrameBuffer = NULL;
 
 	kernelsParameters = "";
 	initKernel = NULL;
@@ -78,6 +79,7 @@ PathOCLRenderThread::PathOCLRenderThread(const unsigned int index, const unsigne
 	tasksBuff = NULL;
 	taskStatsBuff = NULL;
 	frameBufferBuff = NULL;
+	alphaFrameBufferBuff = NULL;
 	materialsBuff = NULL;
 	meshIDBuff = NULL;
 	triangleIDBuff = NULL;
@@ -128,6 +130,7 @@ PathOCLRenderThread::~PathOCLRenderThread() {
 	delete advancePathsKernel;
 
 	delete[] frameBuffer;
+	delete[] alphaFrameBuffer;
 	delete[] gpuTaskStats;
 
 	delete kernelCache;
@@ -145,6 +148,10 @@ void PathOCLRenderThread::AllocOCLBufferRO(cl::Buffer **buff, void *src, const s
 			cl::CommandQueue &oclQueue = intersectionDevice->GetOpenCLQueue();
 			oclQueue.enqueueWriteBuffer(**buff, CL_FALSE, 0, size, src);
 			return;
+		} else {
+			// Free the buffer
+			deviceDesc->FreeMemory((*buff)->getInfo<CL_MEM_SIZE>());
+			delete *buff;
 		}
 	}
 
@@ -166,6 +173,10 @@ void PathOCLRenderThread::AllocOCLBufferRW(cl::Buffer **buff, const size_t size,
 			// I can reuse the buffer
 			//SLG_LOG("[PathOCLRenderThread::" << threadIndex << "] " << desc << " buffer reused for size: " << (size / 1024) << "Kbytes");
 			return;
+		} else {
+			// Free the buffer
+			deviceDesc->FreeMemory((*buff)->getInfo<CL_MEM_SIZE>());
+			delete *buff;
 		}
 	}
 
@@ -207,6 +218,19 @@ void PathOCLRenderThread::InitFrameBuffer() {
 	}
 
 	AllocOCLBufferRW(&frameBufferBuff, sizeof(PathOCL::Pixel) * frameBufferPixelCount, "FrameBuffer");
+
+	delete[] alphaFrameBuffer;
+	alphaFrameBuffer = NULL;
+
+	// Check if the film has an alpha channel
+	if (renderEngine->film->IsAlphaChannelEnabled()) {
+		alphaFrameBuffer = new PathOCL::AlphaPixel[frameBufferPixelCount];
+
+		for (unsigned int i = 0; i < frameBufferPixelCount; ++i)
+			alphaFrameBuffer[i].alpha = 0.f;
+
+		AllocOCLBufferRW(&alphaFrameBufferBuff, sizeof(PathOCL::AlphaPixel) * frameBufferPixelCount, "Alpha Channel FrameBuffer");
+	}
 }
 
 void PathOCLRenderThread::InitCamera() {
@@ -505,6 +529,9 @@ void PathOCLRenderThread::InitKernels() {
 			assert (false);
 	}
 
+	if (renderEngine->film->IsAlphaChannelEnabled())
+		ss << " -D PARAM_ENABLE_ALPHA_CHANNEL";
+
 	// Check the OpenCL vendor and use some specific compiler options
 
 #if defined(__APPLE__) // OSX version detection
@@ -758,7 +785,9 @@ void PathOCLRenderThread::InitRender() {
 		((renderEngine->sampler->type == PathOCL::METROPOLIS) ? 0 : sizeof(unsigned int)) +
 		uDataSize +
 		// Spectrum radiance;
-		sizeof(Spectrum);
+		sizeof(Spectrum) +
+		// float currentAlpha;
+		(((renderEngine->sampler->type == PathOCL::METROPOLIS) && alphaFrameBufferBuff) ? sizeof(float) : 0);
 
 	stratifiedDataSize = 0;
 	if (renderEngine->sampler->type == PathOCL::STRATIFIED) {
@@ -785,9 +814,12 @@ void PathOCLRenderThread::InitRender() {
 
 	const size_t gpuTaksSizePart3 =
 		// PathState size
-		((((areaLightCount > 0) || sunLightBuff) ? sizeof(PathOCL::PathStateDL) : sizeof(PathOCL::PathState)) +
-			//unsigned int diffuseVertexCount;
-			((renderEngine->maxDiffusePathVertexCount < renderEngine->maxPathDepth) ? sizeof(unsigned int) : 0));
+		(((areaLightCount > 0) || sunLightBuff) ? sizeof(PathOCL::PathStateDL) : sizeof(PathOCL::PathState)) +
+		//unsigned int diffuseVertexCount;
+		((renderEngine->maxDiffusePathVertexCount < renderEngine->maxPathDepth) ? sizeof(unsigned int) : 0) +
+		//uint vertexCount;
+		//float alpha;
+		(alphaFrameBufferBuff ? (sizeof(unsigned int) + sizeof(float)) : 0);
 
 	const size_t gpuTaksSize = gpuTaksSizePart1 + gpuTaksSizePart2 + gpuTaksSizePart3;
 	SLG_LOG("[PathOCLRenderThread::" << threadIndex << "] Size of a GPUTask: " << gpuTaksSize <<
@@ -851,7 +883,7 @@ void PathOCLRenderThread::SetKernelArgs() {
 	// Set OpenCL kernel arguments
 
 	//--------------------------------------------------------------------------
-	// initFBKernel
+	// samplerKernel & advancePathsKernel
 	//--------------------------------------------------------------------------
 	unsigned int argIndex = 0;
 	samplerKernel->setArg(argIndex++, *tasksBuff);
@@ -904,12 +936,16 @@ void PathOCLRenderThread::SetKernelArgs() {
 			advancePathsKernel->setArg(argIndex++, *meshNormalMapsBuff);
 		advancePathsKernel->setArg(argIndex++, *uvsBuff);
 	}
+	if (alphaFrameBufferBuff)
+		advancePathsKernel->setArg(argIndex++, *alphaFrameBufferBuff);
 
 	//--------------------------------------------------------------------------
 	// initFBKernel
 	//--------------------------------------------------------------------------
 
 	initFBKernel->setArg(0, *frameBufferBuff);
+	if (alphaFrameBufferBuff)
+		initFBKernel->setArg(1, *alphaFrameBufferBuff);
 
 	//--------------------------------------------------------------------------
 	// initKernel
@@ -949,6 +985,16 @@ void PathOCLRenderThread::Stop() {
 			0,
 			frameBufferBuff->getInfo<CL_MEM_SIZE>(),
 			frameBuffer);
+
+		// Check if I have to transfer the alpha channel too
+		if (alphaFrameBufferBuff) {
+			oclQueue.enqueueReadBuffer(
+				*alphaFrameBufferBuff,
+				CL_TRUE,
+				0,
+				alphaFrameBufferBuff->getInfo<CL_MEM_SIZE>(),
+				alphaFrameBuffer);
+		}
 	}
 
 	FreeOCLBuffer(&raysBuff);
@@ -956,6 +1002,7 @@ void PathOCLRenderThread::Stop() {
 	FreeOCLBuffer(&tasksBuff);
 	FreeOCLBuffer(&taskStatsBuff);
 	FreeOCLBuffer(&frameBufferBuff);
+	FreeOCLBuffer(&alphaFrameBufferBuff);
 	FreeOCLBuffer(&materialsBuff);
 	FreeOCLBuffer(&meshIDBuff);
 	FreeOCLBuffer(&triangleIDBuff);
@@ -1019,7 +1066,7 @@ void PathOCLRenderThread::EndEdit(const EditActionList &editActions) {
 	//--------------------------------------------------------------------------
 
 	if (editActions.Has(FILM_EDIT)) {
-		// Resize the Framebuffer
+		// Resize the Frame Buffer
 		InitFrameBuffer();
 	}
 
@@ -1111,6 +1158,17 @@ void PathOCLRenderThread::RenderThreadImpl(PathOCLRenderThread *renderThread) {
 				renderThread->frameBufferBuff->getInfo<CL_MEM_SIZE>(),
 				renderThread->frameBuffer);
 
+			// Check if I have to transfer the alpha channel too
+			if (renderThread->alphaFrameBufferBuff) {
+				// Async. transfer of the alpha channel
+				oclQueue.enqueueReadBuffer(
+					*(renderThread->alphaFrameBufferBuff),
+					CL_FALSE,
+					0,
+					renderThread->alphaFrameBufferBuff->getInfo<CL_MEM_SIZE>(),
+					renderThread->alphaFrameBuffer);
+			}
+
 			// Async. transfer of GPU task statistics
 			oclQueue.enqueueReadBuffer(
 				*(renderThread->taskStatsBuff),
@@ -1184,4 +1242,14 @@ void PathOCLRenderThread::RenderThreadImpl(PathOCLRenderThread *renderThread) {
 			0,
 			renderThread->frameBufferBuff->getInfo<CL_MEM_SIZE>(),
 			renderThread->frameBuffer);
+	
+	// Check if I have to transfer the alpha channel too
+	if (renderThread->alphaFrameBufferBuff) {
+		oclQueue.enqueueReadBuffer(
+			*(renderThread->alphaFrameBufferBuff),
+			CL_TRUE,
+			0,
+			renderThread->alphaFrameBufferBuff->getInfo<CL_MEM_SIZE>(),
+			renderThread->alphaFrameBuffer);
+	}
 }

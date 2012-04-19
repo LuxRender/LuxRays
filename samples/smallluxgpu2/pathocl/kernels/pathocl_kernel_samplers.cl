@@ -51,6 +51,10 @@ void GenerateCameraPath(
 	task->pathState.bouncePdf = 1.f;
 	task->pathState.specularBounce = TRUE;
 #endif
+#if defined(PARAM_ENABLE_ALPHA_CHANNEL)
+	task->pathState.vertexCount = 0;
+	task->pathState.alpha = 1.f;
+#endif
 	task->pathState.state = PATH_STATE_NEXT_VERTEX;
 }
 
@@ -243,6 +247,9 @@ void Sampler_Init(const size_t gid, Seed *seed, __global Sample *sample) {
 	sample->currentRadiance.r = 0.f;
 	sample->currentRadiance.g = 0.f;
 	sample->currentRadiance.b = 0.f;
+#if defined(PARAM_ENABLE_ALPHA_CHANNEL)
+	sample->currentAlpha = 0.f;
+#endif
 
 	LargeStep(seed, 0, &sample->u[1][0]);
 }
@@ -292,7 +299,15 @@ __kernel void Sampler(
 	}
 }
 
-void Sampler_MLT_SplatSample(__global Pixel *frameBuffer, Seed *seed, __global Sample *sample) {
+void Sampler_MLT_SplatSample(__global Pixel *frameBuffer,
+#if defined(PARAM_ENABLE_ALPHA_CHANNEL)
+		__global AlphaPixel *alphaFrameBuffer,
+#endif
+		Seed *seed, __global Sample *sample
+#if defined(PARAM_ENABLE_ALPHA_CHANNEL)
+		, const float alpha
+#endif
+		) {
 	uint current = sample->current;
 	uint proposed = sample->proposed;
 
@@ -303,6 +318,9 @@ void Sampler_MLT_SplatSample(__global Pixel *frameBuffer, Seed *seed, __global S
 		// sample
 
 		sample->currentRadiance = radiance;
+#if defined(PARAM_ENABLE_ALPHA_CHANNEL)
+		sample->currentAlpha = alpha;
+#endif
 		sample->totalI = Spectrum_Y(&radiance);
 
 		// The following 2 lines could be moved in the initialization code
@@ -313,9 +331,15 @@ void Sampler_MLT_SplatSample(__global Pixel *frameBuffer, Seed *seed, __global S
 		proposed ^= 1;
 	} else {
 		const Spectrum currentL = sample->currentRadiance;
+#if defined(PARAM_ENABLE_ALPHA_CHANNEL)
+		const float currentAlpha = sample->currentAlpha;
+#endif
 		const float currentI = Spectrum_Y(&currentL);
 
 		const Spectrum proposedL = radiance;
+#if defined(PARAM_ENABLE_ALPHA_CHANNEL)
+		const float proposedAlpha = alpha;
+#endif
 		float proposedI = Spectrum_Y(&proposedL);
 		proposedI = isinf(proposedI) ? 0.f : proposedI;
 
@@ -356,6 +380,9 @@ void Sampler_MLT_SplatSample(__global Pixel *frameBuffer, Seed *seed, __global S
 					accProb, rndVal);*/
 
 		Spectrum contrib;
+#if defined(PARAM_ENABLE_ALPHA_CHANNEL)
+		float contribAlpha;
+#endif
 		float norm;
 		float scrX, scrY;
 
@@ -366,7 +393,9 @@ void Sampler_MLT_SplatSample(__global Pixel *frameBuffer, Seed *seed, __global S
 			// Add accumulated contribution of previous reference sample
 			norm = weight / (currentI / meanI + PARAM_SAMPLER_METROPOLIS_LARGE_STEP_RATE);
 			contrib = currentL;
-
+#if defined(PARAM_ENABLE_ALPHA_CHANNEL)
+			contribAlpha = currentAlpha;
+#endif
 			scrX = sample->u[current][IDX_SCREEN_X];
 			scrY = sample->u[current][IDX_SCREEN_Y];
 
@@ -374,7 +403,15 @@ void Sampler_MLT_SplatSample(__global Pixel *frameBuffer, Seed *seed, __global S
 			// Debug code: to check sample distribution
 			contrib.r = contrib.g = contrib.b = (consecutiveRejects + 1.f)  * .01f;
 			const uint pixelIndex = PPixelIndexFloat2D(scrX, scrY);
-			SplatSample(frameBuffer, pixelIndex, &contrib, 1.f);
+			SplatSample(frameBuffer,
+#if defined(PARAM_ENABLE_ALPHA_CHANNEL)
+				alphaFrameBuffer,
+#endif
+				pixelIndex, &contrib,
+#if defined(PARAM_ENABLE_ALPHA_CHANNEL)
+				contribAlpha,
+#endif
+				1.f);
 #endif
 
 			current ^= 1;
@@ -384,6 +421,9 @@ void Sampler_MLT_SplatSample(__global Pixel *frameBuffer, Seed *seed, __global S
 			weight = newWeight;
 
 			sample->currentRadiance = proposedL;
+#if defined(PARAM_ENABLE_ALPHA_CHANNEL)
+			sample->currentAlpha = proposedAlpha;
+#endif
 		} else {
 			/*if (get_global_id(0) == 0)
 				printf(\"\\t\\tREJECTED !\\n\");*/
@@ -391,6 +431,9 @@ void Sampler_MLT_SplatSample(__global Pixel *frameBuffer, Seed *seed, __global S
 			// Add contribution of new sample before rejecting it
 			norm = newWeight / (proposedI / meanI + PARAM_SAMPLER_METROPOLIS_LARGE_STEP_RATE);
 			contrib = proposedL;
+#if defined(PARAM_ENABLE_ALPHA_CHANNEL)
+			contribAlpha = proposedAlpha;
+#endif
 
 			scrX = sample->u[proposed][IDX_SCREEN_X];
 			scrY = sample->u[proposed][IDX_SCREEN_Y];
@@ -401,7 +444,15 @@ void Sampler_MLT_SplatSample(__global Pixel *frameBuffer, Seed *seed, __global S
 			// Debug code: to check sample distribution
 			contrib.r = contrib.g = contrib.b = 1.f * .01f;
 			const uint pixelIndex = PixelIndexFloat2D(scrX, scrY);
-			SplatSample(frameBuffer, pixelIndex, &contrib, 1.f);
+			SplatSample(frameBuffer,
+#if defined(PARAM_ENABLE_ALPHA_CHANNEL)
+				alphaFrameBuffer,
+#endif
+				pixelIndex, &contrib,
+#if defined(PARAM_ENABLE_ALPHA_CHANNEL)
+				contribAlpha,
+#endif
+				1.f);
 #endif
 		}
 
@@ -413,11 +464,27 @@ void Sampler_MLT_SplatSample(__global Pixel *frameBuffer, Seed *seed, __global S
 
 #if (PARAM_IMAGE_FILTER_TYPE == 0)
 			const uint pixelIndex = PixelIndexFloat2D(scrX, scrY);
-			SplatSample(frameBuffer, pixelIndex, &contrib, norm);
+			SplatSample(frameBuffer,
+#if defined(PARAM_ENABLE_ALPHA_CHANNEL)
+				alphaFrameBuffer,
+#endif
+				pixelIndex, &contrib,
+#if defined(PARAM_ENABLE_ALPHA_CHANNEL)
+				contribAlpha,
+#endif
+				norm);
 #else
 			float sx, sy;
 			const uint pixelIndex = PixelIndexFloat2DWithOffset(scrX, scrY, &sx, &sy);
-			SplatSample(frameBuffer, pixelIndex, sx, sy, &contrib, norm);
+			SplatSample(frameBuffer,
+#if defined(PARAM_ENABLE_ALPHA_CHANNEL)
+				alphaFrameBuffer,
+#endif
+				pixelIndex, sx, sy, &contrib,
+#if defined(PARAM_ENABLE_ALPHA_CHANNEL)
+				contribAlpha,
+#endif
+				norm);
 #endif
 		}
 #endif

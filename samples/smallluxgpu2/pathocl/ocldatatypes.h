@@ -59,6 +59,10 @@ typedef struct {
 } Pixel;
 
 typedef struct {
+	float alpha;
+} AlphaPixel;
+
+typedef struct {
 	unsigned int sampleCount;
 } GPUTaskStats;
 
