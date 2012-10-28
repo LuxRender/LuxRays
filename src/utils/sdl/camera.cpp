@@ -42,7 +42,7 @@ void PerspectiveCamera::Update(const unsigned int w, const unsigned int h) {
 	// Used to generate rays
 
 	Transform WorldToCamera = LookAt(orig, target, up);
-	cameraToWorld = WorldToCamera.GetInverse();
+	cameraToWorld = Inverse(WorldToCamera);
 
 	Transform cameraToScreen = Perspective(fieldOfView, clipHither, clipYon);
 
@@ -64,10 +64,10 @@ void PerspectiveCamera::Update(const unsigned int w, const unsigned int h) {
 			Scale(1.f / (screen[1] - screen[0]), 1.f / (screen[2] - screen[3]), 1.f) *
 			luxrays::Translate(Vector(-screen[0], -screen[3], 0.f));
 
-	rasterToCamera = cameraToScreen.GetInverse() * screenToRaster.GetInverse();
+	rasterToCamera = Inverse(screenToRaster * cameraToScreen);
 
-	Transform screenToWorld = cameraToWorld * cameraToScreen.GetInverse();
-	rasterToWorld = screenToWorld * screenToRaster.GetInverse();
+	Transform screenToWorld = cameraToWorld * Inverse(cameraToScreen);
+	rasterToWorld = screenToWorld * Inverse(screenToRaster);
 
 	const float tanAngle = tanf(Radians(fieldOfView) / 2.f) * 2.f;
 	const float xPixelWidth = tanAngle * ((screen[1] - screen[0]) / 2.f) / filmWidth;
@@ -105,7 +105,7 @@ void PerspectiveCamera::GenerateRay(
 	ray->mint = MachineEpsilon::E(ray->o);
 	ray->maxt = (clipYon - clipHither) / ray->d.z;
 
-	*ray = cameraToWorld * *ray;
+	*ray = cameraToWorld * (*ray);
 }
 
 bool PerspectiveCamera::GetSamplePosition(const Point &p, const Vector &wi,
@@ -115,7 +115,7 @@ bool PerspectiveCamera::GetSamplePosition(const Point &p, const Vector &wi,
 		distance * cosi > clipYon)))
 		return false;
 
-	const Point pO(rasterToWorld / (p + ((lensRadius > 0.f) ?
+	const Point pO(Inverse(rasterToWorld) * (p + ((lensRadius > 0.f) ?
 		(wi * (focalDistance / cosi)) : wi)));
 
 	*x = pO.x;
