@@ -44,7 +44,7 @@
 #include "luxrays/core/geometry/transform.h"
 #include "luxrays/accelerators/mqbvhaccel.h"
 #include "luxrays/accelerators/bvhaccel.h"
-#include "luxrays/utils/ocl/utils.h"
+#include "luxrays/opencl/utils.h"
 
 //------------------------------------------------------------------------------
 // PathOCLRenderThread

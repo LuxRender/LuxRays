@@ -26,6 +26,7 @@
 #include <cstdlib>
 
 #include "luxrays/luxrays.h"
+#include "luxrays/core/geometry/uv.h"
 #include "luxrays/core/geometry/triangle.h"
 #include "luxrays/core/trianglemesh.h"
 #include "luxrays/utils/core/spectrum.h"

@@ -33,13 +33,14 @@
 // Required when using XInitThread()
 //#include <X11/Xlib.h>
 
+#include "luxrays/core/device.h"
+#include "luxrays/opencl/utils.h"
+
 #include "smalllux.h"
 #include "displayfunc.h"
 #include "rendersession.h"
 #include "pathocl/pathocl.h"
 #include "telnet.h"
-#include "luxrays/core/device.h"
-#include "luxrays/utils/ocl/utils.h"
 
 string SLG_LABEL = "SmallLuxGPU v" SLG_VERSION_MAJOR "." SLG_VERSION_MINOR " (LuxRays demo: http://www.luxrender.net)";
 

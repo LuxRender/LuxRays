@@ -28,6 +28,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <vector>
 
 #if defined (WIN32)
 #include <windows.h>
@@ -159,7 +160,7 @@ public:
 
 private:
 	void UpdateScreenBufferImpl(const ToneMapType type);
-	void MergeSampleBuffers(Pixel *p, vector<bool> &frameBufferMask) const;
+	void MergeSampleBuffers(Pixel *p, std::vector<bool> &frameBufferMask) const;
 
 	float Radiance2PixelFloat(const float x) const {
 		// Very slow !

@@ -123,13 +123,13 @@ float MetropolisSampler::GetSample(const unsigned int index) {
 	return s;
 }
 
-void MetropolisSampler::NextSample(const vector<SampleResult> &sampleResults) {
+void MetropolisSampler::NextSample(const std::vector<SampleResult> &sampleResults) {
 	film->AddSampleCount(1.0);
 
 	// Calculate the sample result luminance
 	const unsigned int pixelCount = film->GetWidth() * film->GetHeight();
 	float newLuminance = 0.f;
-	for (vector<SampleResult>::const_iterator sr = sampleResults.begin(); sr != sampleResults.end(); ++sr) {
+	for (std::vector<SampleResult>::const_iterator sr = sampleResults.begin(); sr != sampleResults.end(); ++sr) {
 		const float luminance = sr->radiance.Y();
 		assert (!isnan(luminance) && !isinf(luminance));
 
@@ -170,7 +170,7 @@ void MetropolisSampler::NextSample(const vector<SampleResult> &sampleResults) {
 		// Add accumulated SampleResult of previous reference sample
 		const float norm = weight / (currentLuminance / meanIntensity + currentLargeMutationProbability);
 		if (norm > 0.f) {
-			for (vector<SampleResult>::const_iterator sr = currentSampleResult.begin(); sr < currentSampleResult.end(); ++sr) {
+			for (std::vector<SampleResult>::const_iterator sr = currentSampleResult.begin(); sr < currentSampleResult.end(); ++sr) {
 				film->SplatFiltered(sr->type, sr->screenX, sr->screenY, sr->radiance, norm);
 				film->SplatFilteredAlpha(sr->screenX, sr->screenY, sr->alpha, norm);
 			}
@@ -189,7 +189,7 @@ void MetropolisSampler::NextSample(const vector<SampleResult> &sampleResults) {
 		// Add contribution of new sample before rejecting it
 		const float norm = newWeight / (newLuminance / meanIntensity + currentLargeMutationProbability);
 		if (norm > 0.f) {
-			for (vector<SampleResult>::const_iterator sr = sampleResults.begin(); sr < sampleResults.end(); ++sr) {
+			for (std::vector<SampleResult>::const_iterator sr = sampleResults.begin(); sr < sampleResults.end(); ++sr) {
 				film->SplatFiltered(sr->type, sr->screenX, sr->screenY, norm * sr->radiance, norm);
 				film->SplatFilteredAlpha(sr->screenX, sr->screenY, sr->alpha, norm);
 			}

@@ -340,7 +340,7 @@ void Film::UpdateScreenBuffer() {
 	UpdateScreenBufferImpl(toneMapParams->GetType());
 }
 
-void Film::MergeSampleBuffers(Pixel *p, vector<bool> &frameBufferMask) const {
+void Film::MergeSampleBuffers(Pixel *p, std::vector<bool> &frameBufferMask) const {
 	const unsigned int pixelCount = width * height;
 
 	// Merge PER_PIXEL_NORMALIZED and PER_SCREEN_NORMALIZED buffers
@@ -389,7 +389,7 @@ void Film::UpdateScreenBufferImpl(const ToneMapType type) {
 	switch (type) {
 		case TONEMAP_NONE: {
 			Pixel *p = frameBuffer->GetPixels();
-			vector<bool> frameBufferMask(pixelCount, false);
+			std::vector<bool> frameBufferMask(pixelCount, false);
 
 			MergeSampleBuffers(p, frameBufferMask);
 			break;
@@ -398,7 +398,7 @@ void Film::UpdateScreenBufferImpl(const ToneMapType type) {
 			const LinearToneMapParams &tm = (LinearToneMapParams &)(*toneMapParams);
 			Pixel *p = frameBuffer->GetPixels();
 			const unsigned int pixelCount = width * height;
-			vector<bool> frameBufferMask(pixelCount, false);
+			std::vector<bool> frameBufferMask(pixelCount, false);
 
 			MergeSampleBuffers(p, frameBufferMask);
 
@@ -420,7 +420,7 @@ void Film::UpdateScreenBufferImpl(const ToneMapType type) {
 			Pixel *p = frameBuffer->GetPixels();
 			const unsigned int pixelCount = width * height;
 
-			vector<bool> frameBufferMask(pixelCount, false);
+			std::vector<bool> frameBufferMask(pixelCount, false);
 			MergeSampleBuffers(p, frameBufferMask);
 
 			// Use the frame buffer as temporary storage and calculate the average luminance

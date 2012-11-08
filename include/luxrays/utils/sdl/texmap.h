@@ -26,6 +26,8 @@
 #include <vector>
 #include <map>
 
+#include "luxrays/core/geometry/uv.h"
+#include "luxrays/utils/core/spectrum.h"
 #include "luxrays/utils/sdl/sdl.h"
 
 namespace luxrays { namespace sdl {

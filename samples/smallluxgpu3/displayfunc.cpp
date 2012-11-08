@@ -38,7 +38,9 @@
 #include "displayfunc.h"
 #include "renderconfig.h"
 
+#include "luxrays/opencl/intersectiondevice.h"
 #include "luxrays/utils/film/film.h"
+
 #include "pathocl/pathocl.h"
 #include "lightcpu/lightcpu.h"
 #include "pathcpu/pathcpu.h"

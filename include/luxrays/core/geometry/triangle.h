@@ -24,6 +24,11 @@
 #define	_LUXRAYS_TRIANGLE_H
 
 #include "luxrays/luxrays.h"
+#include "luxrays/core/geometry/point.h"
+#include "luxrays/core/geometry/vector.h"
+#include "luxrays/core/geometry/normal.h"
+#include "luxrays/core/geometry/ray.h"
+#include "luxrays/core/geometry/bbox.h"
 
 namespace luxrays {
 

@@ -22,8 +22,12 @@
 #include "luxrays/accelerators/qbvhaccel.h"
 #include "luxrays/core/utils.h"
 #include "luxrays/core/context.h"
+#ifdef LUXRAYS_DISABLE_OPENCL
 #include "luxrays/core/intersectiondevice.h"
+#else
+#include "luxrays/opencl/intersectiondevice.h"
 #include "luxrays/kernels/kernels.h"
+#endif
 
 namespace luxrays {
 
@@ -279,7 +283,7 @@ OpenCLKernel *QBVHAccel::NewOpenCLKernel(OpenCLIntersectionDevice *dev,
 			"] Disable forced for QBVH scene storage inside image");
 		useImage = false;
 	} else if (!deviceDesc->HasImageSupport() ||
-		(deviceDesc->GetOpenCLType() != OCL_DEVICE_TYPE_GPU)) {
+		(deviceDesc->GetType() != DEVICE_TYPE_OPENCL_GPU)) {
 		LR_LOG(deviceContext, "[OpenCL device::" << deviceName <<
 			"] OpenCL image support is not available");
 		useImage = false;

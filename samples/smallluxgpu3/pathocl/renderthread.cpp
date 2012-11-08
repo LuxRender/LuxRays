@@ -23,10 +23,12 @@
 #include "pathocl/pathocl.h"
 #include "pathocl/kernels/kernels.h"
 #include "renderconfig.h"
+
 #include "luxrays/core/geometry/transform.h"
 #include "luxrays/accelerators/mqbvhaccel.h"
 #include "luxrays/accelerators/bvhaccel.h"
-#include "luxrays/utils/ocl/utils.h"
+#include "luxrays/opencl/utils.h"
+#include "luxrays/opencl/intersectiondevice.h"
 
 #if defined(__APPLE__)
 //OSX version detection

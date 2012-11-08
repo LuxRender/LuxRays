@@ -23,6 +23,7 @@
 #define	_LUXRAYS_SAMPLER_H
 
 #include <string>
+#include <vector>
 
 #include "luxrays/luxrays.h"
 #include "luxrays/utils/core/randomgen.h"
@@ -37,7 +38,7 @@ typedef struct {
 	float alpha;
 } SampleResult;
 
-inline void AddSampleResult(vector<SampleResult> &sampleResults, const FilmBufferType type,
+inline void AddSampleResult(std::vector<SampleResult> &sampleResults, const FilmBufferType type,
 	const float screenX, const float screenY, const Spectrum &radiance, const float alpha) {
 	SampleResult sr;
 	sr.type = type;
@@ -58,7 +59,7 @@ public:
 
 	// index 0 and 1 are always image X and image Y
 	virtual float GetSample(const unsigned int index) = 0;
-	virtual void NextSample(const vector<SampleResult> &sampleResults) = 0;
+	virtual void NextSample(const std::vector<SampleResult> &sampleResults) = 0;
 
 protected:
 	RandomGenerator *rndGen;
@@ -77,10 +78,10 @@ public:
 	void RequestSamples(const unsigned int size) { };
 
 	float GetSample(const unsigned int index) { return rndGen->floatValue(); }
-	void NextSample(const vector<SampleResult> &sampleResults) {
+	void NextSample(const std::vector<SampleResult> &sampleResults) {
 		film->AddSampleCount(1.0);
 
-		for (vector<SampleResult>::const_iterator sr = sampleResults.begin(); sr < sampleResults.end(); ++sr) {
+		for (std::vector<SampleResult>::const_iterator sr = sampleResults.begin(); sr < sampleResults.end(); ++sr) {
 			film->SplatFiltered(sr->type, sr->screenX, sr->screenY, sr->radiance);
 			film->SplatFilteredAlpha(sr->screenX, sr->screenY, sr->alpha);
 		}
@@ -101,7 +102,7 @@ public:
 
 	float GetSample(const unsigned int index);
 
-	void NextSample(const vector<SampleResult> &sampleResults);
+	void NextSample(const std::vector<SampleResult> &sampleResults);
 
 private:
 	unsigned int maxRejects;
@@ -122,7 +123,7 @@ private:
 	double currentLuminance;
 	float *currentSamples;
 	unsigned int *currentSampleStamps;
-	vector<SampleResult> currentSampleResult;
+	std::vector<SampleResult> currentSampleResult;
 
 	bool isLargeMutation, cooldown;
 };

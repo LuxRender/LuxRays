@@ -22,6 +22,8 @@
 #ifndef _LUXRAYS_UTILS_FILTER_H
 #define	_LUXRAYS_UTILS_FILTER_H
 
+#include "luxrays/core/utils.h"
+
 namespace luxrays { namespace utils {
 
 //------------------------------------------------------------------------------
