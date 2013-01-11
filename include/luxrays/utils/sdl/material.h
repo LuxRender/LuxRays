@@ -23,6 +23,8 @@
 #define	_LUXRAYS_SDL_MATERIAL_H
 
 #include <vector>
+#include <set>
+
 
 #include "luxrays/utils/core/spectrum.h"
 #include "luxrays/utils/sdl/bsdfevents.h"
