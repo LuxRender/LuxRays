@@ -20,7 +20,6 @@
  ***************************************************************************/
 
 // TODO: metropolis with lazy evaluation
-// TODO: finish MixMaterial_GetPassThroughTransparency()
 		
 #if !defined(LUXRAYS_DISABLE_OPENCL)
 
@@ -86,8 +85,12 @@ PathOCLRenderEngine::PathOCLRenderEngine(RenderConfig *rcfg, Film *flm, boost::m
 		oclIntersectionDevice->SetDataParallelSupport(false);
 
 		// Check if OpenCL 1.1 is available
-		if (!oclIntersectionDevice->GetDeviceDesc()->IsOpenCL_1_1())
-			throw std::runtime_error("OpenCL version 1.1 or better is required for device: " + devs[i]->GetName());
+		SLG_LOG("  Device OpenCL version: " << oclIntersectionDevice->GetDeviceDesc()->GetOpenCLVersion());
+		if (!oclIntersectionDevice->GetDeviceDesc()->IsOpenCL_1_1()) {
+			// NVIDIA drivers report OpenCL 1.0 even if they are 1.1 so I just
+			// print a warning instead of throwing an exception
+			SLG_LOG("WARNING: OpenCL version 1.1 or better is required. Device " + devs[i]->GetName() + " may not work.");
+		}
 	}
 
 	// Set the LuxRays SataSet
@@ -163,6 +166,9 @@ void PathOCLRenderEngine::StartLockLess() {
 			sampler->metropolis.maxRejects = maxRejects;
 			break;
 		}
+		case SOBOL:
+			sampler->type = luxrays::ocl::SOBOL;
+			break;
 		default:
 			throw std::runtime_error("Unknown sampler.type: " + boost::lexical_cast<std::string>(samplerType));
 	}
@@ -221,7 +227,6 @@ void PathOCLRenderEngine::StartLockLess() {
 	for (size_t i = 0; i < renderThreadCount; ++i) {
 		if (!renderThreads[i]) {
 			renderThreads[i] = new PathOCLRenderThread(i,
-					i / (float)renderThreadCount,
 					(OpenCLIntersectionDevice *)(intersectionDevices[i]),
 					this);
 		}
@@ -258,15 +263,15 @@ void PathOCLRenderEngine::EndEditLockLess(const EditActionList &editActions) {
 void PathOCLRenderEngine::UpdateFilmLockLess() {
 	boost::unique_lock<boost::mutex> lock(*filmMutex);
 
-	const unsigned int imgWidth = film->GetWidth();
-	const unsigned int imgHeight = film->GetHeight();
+	const u_int imgWidth = film->GetWidth();
+	const u_int imgHeight = film->GetHeight();
 
 	film->Reset();
 
-	for (unsigned int y = 0; y < imgHeight; ++y) {
-		unsigned int pGPU = 1 + (y + 1) * (imgWidth + 2);
+	for (u_int y = 0; y < imgHeight; ++y) {
+		u_int pGPU = 1 + (y + 1) * (imgWidth + 2);
 
-		for (unsigned int x = 0; x < imgWidth; ++x) {
+		for (u_int x = 0; x < imgWidth; ++x) {
 			Spectrum radiance;
 			float alpha = 0.0f;
 			float count = 0.f;

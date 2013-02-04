@@ -99,6 +99,21 @@ typedef struct {
 	Spectrum currentRadiance;
 } MetropolisSampleWithoutAlphaChannel;
 
+typedef struct {
+	float rng0, rng1;
+	unsigned int pixelIndex, pass;
+
+	Spectrum radiance;
+	float alpha;
+} SobolSampleWithAlphaChannel;
+
+typedef struct {
+	float rng0, rng1;
+	unsigned int pixelIndex, pass;
+
+	Spectrum radiance;
+} SobolSampleWithoutAlphaChannel;
+
 #if defined(SLG_OPENCL_KERNEL)
 
 #if (PARAM_SAMPLER_TYPE == 0)
@@ -117,6 +132,14 @@ typedef MetropolisSampleWithoutAlphaChannel Sample;
 #endif
 #endif
 
+#if (PARAM_SAMPLER_TYPE == 2)
+#if defined(PARAM_ENABLE_ALPHA_CHANNEL)
+typedef SobolSampleWithAlphaChannel Sample;
+#else
+typedef SobolSampleWithoutAlphaChannel Sample;
+#endif
+#endif
+
 #endif
 
 //------------------------------------------------------------------------------
@@ -127,19 +150,26 @@ typedef MetropolisSampleWithoutAlphaChannel Sample;
 
 #define IDX_SCREEN_X 0
 #define IDX_SCREEN_Y 1
-#define IDX_EYE_PASSTROUGH 2
-#if defined(PARAM_CAMERA_HAS_DOF)
+#if defined(PARAM_CAMERA_HAS_DOF) && defined(PARAM_HAS_PASSTHROUGH)
+#define IDX_EYE_PASSTHROUGH 2
 #define IDX_DOF_X 3
 #define IDX_DOF_Y 4
 #define IDX_BSDF_OFFSET 5
-#else
+#elif defined(PARAM_CAMERA_HAS_DOF)
+#define IDX_DOF_X 2
+#define IDX_DOF_Y 3
+#define IDX_BSDF_OFFSET 4
+#elif defined(PARAM_HAS_PASSTHROUGH)
+#define IDX_EYE_PASSTHROUGH 2
 #define IDX_BSDF_OFFSET 3
+#else
+#define IDX_BSDF_OFFSET 2
 #endif
 
-// Relative to IDX_BSDF_OFFSET + PathDepth * SAMPLE_SIZE
+// Relative to IDX_BSDF_OFFSET + PathDepth * VERTEX_SAMPLE_SIZE
 #if defined(PARAM_DIRECT_LIGHT_SAMPLING) && defined(PARAM_HAS_PASSTHROUGH)
 
-#define IDX_PASSTROUGH 0
+#define IDX_PASSTHROUGH 0
 #define IDX_BSDF_X 1
 #define IDX_BSDF_Y 2
 #define IDX_DIRECTLIGHT_X 3
@@ -149,7 +179,7 @@ typedef MetropolisSampleWithoutAlphaChannel Sample;
 #define IDX_DIRECTLIGHT_A 7
 #define IDX_RR 8
 
-#define SAMPLE_SIZE 9
+#define VERTEX_SAMPLE_SIZE 9
 
 #elif defined(PARAM_DIRECT_LIGHT_SAMPLING)
 
@@ -161,16 +191,16 @@ typedef MetropolisSampleWithoutAlphaChannel Sample;
 #define IDX_DIRECTLIGHT_W 5
 #define IDX_RR 6
 
-#define SAMPLE_SIZE 7
+#define VERTEX_SAMPLE_SIZE 7
 
 #elif defined(PARAM_HAS_PASSTHROUGH)
 
-#define IDX_PASSTROUGH 0
+#define IDX_PASSTHROUGH 0
 #define IDX_BSDF_X 1
 #define IDX_BSDF_Y 2
 #define IDX_RR 3
 
-#define SAMPLE_SIZE 4
+#define VERTEX_SAMPLE_SIZE 4
 
 #else
 
@@ -178,16 +208,16 @@ typedef MetropolisSampleWithoutAlphaChannel Sample;
 #define IDX_BSDF_Y 1
 #define IDX_RR 2
 
-#define SAMPLE_SIZE 3
+#define VERTEX_SAMPLE_SIZE 3
 
 #endif
 
-#if (PARAM_SAMPLER_TYPE == 0)
+#if (PARAM_SAMPLER_TYPE == 0) || (PARAM_SAMPLER_TYPE == 2)
 #define TOTAL_U_SIZE 2
 #endif
 
 #if (PARAM_SAMPLER_TYPE == 1)
-#define TOTAL_U_SIZE (IDX_BSDF_OFFSET + PARAM_MAX_PATH_DEPTH * SAMPLE_SIZE)
+#define TOTAL_U_SIZE (IDX_BSDF_OFFSET + PARAM_MAX_PATH_DEPTH * VERTEX_SAMPLE_SIZE)
 #endif
 
 #endif

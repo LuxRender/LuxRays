@@ -23,7 +23,8 @@
 
 typedef enum {
 	RANDOM = 0,
-	METROPOLIS = 1
+	METROPOLIS = 1,
+	SOBOL = 2
 } SamplerType;
 
 typedef struct {
@@ -35,3 +36,6 @@ typedef struct {
 		} metropolis;
 	};
 } Sampler;
+
+#define SOBOL_BITS 32
+#define SOBOL_MAX_DIMENSIONS 21201

@@ -26,7 +26,8 @@ std::string KernelSource_sampler_types =
 "\n"
 "typedef enum {\n"
 "	RANDOM = 0,\n"
-"	METROPOLIS = 1\n"
+"	METROPOLIS = 1,\n"
+"	SOBOL = 2\n"
 "} SamplerType;\n"
 "\n"
 "typedef struct {\n"
@@ -38,4 +39,7 @@ std::string KernelSource_sampler_types =
 "		} metropolis;\n"
 "	};\n"
 "} Sampler;\n"
+"\n"
+"#define SOBOL_BITS 32\n"
+"#define SOBOL_MAX_DIMENSIONS 21201\n"
 ; } }

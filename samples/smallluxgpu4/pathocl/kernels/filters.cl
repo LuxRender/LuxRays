@@ -105,28 +105,30 @@ Error: unknown image filter !!!
 
 #endif
 
+#if defined(PARAM_USE_PIXEL_ATOMICS)
+void AtomicAdd(__global float *val, const float delta) {
+	union {
+		float f;
+		unsigned int i;
+	} oldVal;
+	union {
+		float f;
+		unsigned int i;
+	} newVal;
+
+	do {
+		oldVal.f = *val;
+		newVal.f = oldVal.f + delta;
+	} while (atom_cmpxchg((__global unsigned int *)val, oldVal.i, newVal.i) != oldVal.i);
+}
+#endif
+
 void Pixel_AddRadiance(__global Pixel *pixel, const float3 rad, const float weight) {
 	/*if (isnan(rad->r) || isinf(rad->r) ||
 			isnan(rad->g) || isinf(rad->g) ||
 			isnan(rad->b) || isinf(rad->b) ||
 			isnan(weight) || isinf(weight))
 		printf(\"NaN/Inf. error: (%f, %f, %f) [%f]\\n\", rad->r, rad->g, rad->b, weight);*/
-	
-#if defined(__APPLE_FIX__)
-
-#if defined(PARAM_USE_PIXEL_ATOMICS)
-	AtomicAdd(&pixel->c.r, weight * rad.r);
-	AtomicAdd(&pixel->c.g, weight * rad.g);
-	AtomicAdd(&pixel->c.b, weight * rad.b);
-	AtomicAdd(&pixel->count, weight);
-#else
-	pixel->c.r += weight * rad.r;
-	pixel->c.g += weight * rad.g;
-	pixel->c.b += weight * rad.b;
-	pixel->count += weight;
-#endif
-
-#else
 
 	float4 s;
 	s.xyz = rad;
@@ -142,8 +144,6 @@ void Pixel_AddRadiance(__global Pixel *pixel, const float3 rad, const float weig
 	float4 p = VLOAD4F(&(pixel->c.r));
 	p += s;
 	VSTORE4F(p, &(pixel->c.r));
-#endif
-
 #endif
 }
 
@@ -192,7 +192,7 @@ void SplatSample(__global Pixel *frameBuffer,
 	Pixel_AddRadiance(pixel, radiance, weight);
 
 #if defined(PARAM_ENABLE_ALPHA_CHANNEL)
-	__global AlphaPixel *apixel = &alphaFrameBuffer[pindex];
+	__global AlphaPixel *apixel = &alphaFrameBuffer[XY2FrameBufferIndex(x, y)];
 	Pixel_AddAlpha(apixel, alpha, weight);
 #endif
 }

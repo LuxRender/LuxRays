@@ -283,8 +283,13 @@ float3 ImageMapTexture_GetColorValue(__global Texture *texture, const float2 uv
 #endif
 
 //------------------------------------------------------------------------------
+// Generic texture functions
+//
+// They include the support for all texture but recursive one
+// (because OpenCL doesn't support recursion)
+//------------------------------------------------------------------------------
 
-float Texture_GetGreyValue(__global Texture *texture, const float2 uv
+float Texture_GetGreyValueNoRecursive(__global Texture *texture, const float2 uv
 		IMAGEMAPS_PARAM_DECL) {
 	switch (texture->type) {
 #if defined(PARAM_ENABLE_TEX_CONST_FLOAT)
@@ -309,7 +314,7 @@ float Texture_GetGreyValue(__global Texture *texture, const float2 uv
 	}
 }
 
-float3 Texture_GetColorValue(__global Texture *texture, const float2 uv
+float3 Texture_GetColorValueNoRecursive(__global Texture *texture, const float2 uv
 		IMAGEMAPS_PARAM_DECL) {
 	switch (texture->type) {
 #if defined(PARAM_ENABLE_TEX_CONST_FLOAT)
@@ -334,7 +339,7 @@ float3 Texture_GetColorValue(__global Texture *texture, const float2 uv
 	}
 }
 
-float2 Texture_GetDuDv(__global Texture *texture) {
+float2 Texture_GetDuDvNoRecursive(__global Texture *texture) {
 	switch (texture->type) {
 #if defined(PARAM_ENABLE_TEX_IMAGEMAP)
 		case IMAGEMAP:
@@ -351,5 +356,207 @@ float2 Texture_GetDuDv(__global Texture *texture) {
 #endif
 		default:
 			return 0.f;
+	}
+}
+
+//------------------------------------------------------------------------------
+// Scale texture
+//------------------------------------------------------------------------------
+
+#if defined (PARAM_ENABLE_TEX_SCALE)
+
+float ScaleTexture_GetGreyValue(__global Texture *texture, const float2 uv
+		TEXTURES_PARAM_DECL) {
+	__global Texture *tex1 = &texs[texture->scaleTex.tex1Index];
+	__global Texture *tex2 = &texs[texture->scaleTex.tex2Index];
+
+	return Texture_GetGreyValueNoRecursive(tex1, uv
+				IMAGEMAPS_PARAM) *
+			Texture_GetGreyValueNoRecursive(tex2, uv
+				IMAGEMAPS_PARAM);
+}
+
+float3 ScaleTexture_GetColorValue(__global Texture *texture, const float2 uv
+		TEXTURES_PARAM_DECL) {
+	__global Texture *tex1 = &texs[texture->scaleTex.tex1Index];
+	__global Texture *tex2 = &texs[texture->scaleTex.tex2Index];
+
+	return Texture_GetColorValueNoRecursive(tex1, uv
+				IMAGEMAPS_PARAM) * 
+			Texture_GetColorValueNoRecursive(tex2, uv
+				IMAGEMAPS_PARAM);
+}
+
+float2 ScaleTexture_GetDuDv(__global Texture *texture
+		TEXTURES_PARAM_DECL) {
+	__global Texture *tex1 = &texs[texture->scaleTex.tex1Index];
+	__global Texture *tex2 = &texs[texture->scaleTex.tex2Index];
+
+	const float2 dudv1 = Texture_GetDuDvNoRecursive(tex1);
+	const float2 dudv2 = Texture_GetDuDvNoRecursive(tex2);
+
+	return (float2)(fmax(dudv1.x, dudv2.x), fmax(dudv1.y, dudv2.y));
+}
+
+#endif
+
+//------------------------------------------------------------------------------
+// FresnelApproxN & FresnelApproxK texture
+//------------------------------------------------------------------------------
+
+float FresnelApproxN(const float Fr) {
+	const float sqrtReflectance = sqrt(clamp(Fr, 0.f, .999f));
+
+	return (1.f + sqrtReflectance) /
+		(1.f - sqrtReflectance);
+}
+
+float3 FresnelApproxN3(const float3 Fr) {
+	const float3 sqrtReflectance = Spectrum_Sqrt(clamp(Fr, 0.f, .999f));
+
+	return (WHITE + sqrtReflectance) /
+		(WHITE - sqrtReflectance);
+}
+
+float FresnelApproxK(const float Fr) {
+	const float reflectance = clamp(Fr, 0.f, .999f);
+
+	return 2.f * sqrt(reflectance /
+		(1.f - reflectance));
+}
+
+float3 FresnelApproxK3(const float3 Fr) {
+	const float3 reflectance = clamp(Fr, 0.f, .999f);
+
+	return 2.f * Spectrum_Sqrt(reflectance /
+		(WHITE - reflectance));
+}
+
+#if defined (PARAM_ENABLE_FRESNEL_APPROX_N)
+
+float FresnelApproxNTexture_GetGreyValue(__global Texture *texture, const float2 uv
+		TEXTURES_PARAM_DECL) {
+	__global Texture *tex = &texs[texture->fresnelApproxN.texIndex];
+
+	return FresnelApproxN(Texture_GetGreyValueNoRecursive(tex, uv
+				IMAGEMAPS_PARAM));
+}
+
+float3 FresnelApproxNTexture_GetColorValue(__global Texture *texture, const float2 uv
+		TEXTURES_PARAM_DECL) {
+	__global Texture *tex = &texs[texture->fresnelApproxN.texIndex];
+
+	return FresnelApproxN3(Texture_GetColorValueNoRecursive(tex, uv
+				IMAGEMAPS_PARAM));
+}
+
+float2 FresnelApproxNTexture_GetDuDv(__global Texture *texture
+		TEXTURES_PARAM_DECL) {
+	__global Texture *tex = &texs[texture->fresnelApproxN.texIndex];
+
+	return Texture_GetDuDvNoRecursive(tex);
+}
+
+#endif
+
+#if defined (PARAM_ENABLE_FRESNEL_APPROX_K)
+
+float FresnelApproxKTexture_GetGreyValue(__global Texture *texture, const float2 uv
+		TEXTURES_PARAM_DECL) {
+	__global Texture *tex = &texs[texture->fresnelApproxK.texIndex];
+
+	return FresnelApproxK(Texture_GetGreyValueNoRecursive(tex, uv
+				IMAGEMAPS_PARAM));
+}
+
+float3 FresnelApproxKTexture_GetColorValue(__global Texture *texture, const float2 uv
+		TEXTURES_PARAM_DECL) {
+	__global Texture *tex = &texs[texture->fresnelApproxK.texIndex];
+
+	return FresnelApproxK3(Texture_GetColorValueNoRecursive(tex, uv
+				IMAGEMAPS_PARAM));
+}
+
+float2 FresnelApproxKTexture_GetDuDv(__global Texture *texture
+		TEXTURES_PARAM_DECL) {
+	__global Texture *tex = &texs[texture->fresnelApproxK.texIndex];
+
+	return Texture_GetDuDvNoRecursive(tex);
+}
+
+#endif
+
+//------------------------------------------------------------------------------
+// Generic texture functions with support for recursive textures
+//------------------------------------------------------------------------------
+
+float Texture_GetGreyValue(__global Texture *texture, const float2 uv
+		TEXTURES_PARAM_DECL) {
+	switch (texture->type) {
+#if defined(PARAM_ENABLE_TEX_SCALE)
+		case SCALE_TEX:
+			return ScaleTexture_GetGreyValue(texture, uv
+				TEXTURES_PARAM);
+#endif
+#if defined(PARAM_ENABLE_FRESNEL_APPROX_N)
+		case FRESNEL_APPROX_N:
+			return FresnelApproxNTexture_GetGreyValue(texture, uv
+				TEXTURES_PARAM);
+#endif
+#if defined(PARAM_ENABLE_FRESNEL_APPROX_K)
+		case FRESNEL_APPROX_K:
+			return FresnelApproxKTexture_GetGreyValue(texture, uv
+				TEXTURES_PARAM);
+#endif
+		default:
+			return Texture_GetGreyValueNoRecursive(texture, uv
+				IMAGEMAPS_PARAM);
+	}
+}
+
+float3 Texture_GetColorValue(__global Texture *texture, const float2 uv
+		TEXTURES_PARAM_DECL) {
+	switch (texture->type) {
+#if defined(PARAM_ENABLE_TEX_SCALE)
+		case SCALE_TEX:
+			return ScaleTexture_GetColorValue(texture, uv
+				TEXTURES_PARAM);
+#endif
+#if defined(PARAM_ENABLE_FRESNEL_APPROX_N)
+		case FRESNEL_APPROX_N:
+			return FresnelApproxNTexture_GetColorValue(texture, uv
+				TEXTURES_PARAM);
+#endif
+#if defined(PARAM_ENABLE_FRESNEL_APPROX_K)
+		case FRESNEL_APPROX_K:
+			return FresnelApproxKTexture_GetColorValue(texture, uv
+				TEXTURES_PARAM);
+#endif
+		default:
+			return Texture_GetColorValueNoRecursive(texture, uv
+				IMAGEMAPS_PARAM);
+	}
+}
+
+float2 Texture_GetDuDv(__global Texture *texture
+		TEXTURES_PARAM_DECL) {
+	switch (texture->type) {
+#if defined(PARAM_ENABLE_TEX_SCALE)
+		case SCALE_TEX:
+			return ScaleTexture_GetDuDv(texture
+					TEXTURES_PARAM);
+#endif
+#if defined(PARAM_ENABLE_FRESNEL_APPROX_N)
+		case FRESNEL_APPROX_N:
+			return FresnelApproxNTexture_GetDuDv(texture
+					TEXTURES_PARAM);
+#endif
+#if defined(PARAM_ENABLE_FRESNEL_APPROX_K)
+		case FRESNEL_APPROX_K:
+			return FresnelApproxKTexture_GetDuDv(texture
+					TEXTURES_PARAM);
+#endif
+		default:
+			return Texture_GetDuDvNoRecursive(texture);
 	}
 }

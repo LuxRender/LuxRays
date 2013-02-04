@@ -25,6 +25,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <set>
 
 #include "luxrays/luxrays.h"
 #include "luxrays/core/geometry/uv.h"
@@ -44,9 +45,10 @@ namespace sdl {
 //------------------------------------------------------------------------------
 
 typedef enum {
-	CONST_FLOAT, CONST_FLOAT3, CONST_FLOAT4, IMAGEMAP
+	CONST_FLOAT, CONST_FLOAT3, CONST_FLOAT4, IMAGEMAP, SCALE_TEX, FRESNEL_APPROX_N,
+	FRESNEL_APPROX_K
 } TextureType;
-	
+
 class Texture {
 public:
 	Texture() { }
@@ -59,6 +61,10 @@ public:
 	virtual float GetAlphaValue(const UV &uv) const = 0;
 
 	virtual const UV GetDuDv() const = 0;
+
+	virtual void AddReferencedTextures(std::set<const Texture *> &referencedTexs) const {
+		referencedTexs.insert(this);
+	}
 };
 
 //------------------------------------------------------------------------------
@@ -239,7 +245,7 @@ private:
 		assert (index < width * height);
 
 		if (channelCount == 1)
-			return Spectrum(pixels[index]).Y();
+			return pixels[index];
 		else {
 			// channelCount = (3 or 4)
 			const float *pixel = &pixels[index * channelCount];
@@ -365,6 +371,91 @@ public:
 
 private:
 	const ImageMapInstance *imgMapInstance;
+};
+
+//------------------------------------------------------------------------------
+// Scale texture
+//------------------------------------------------------------------------------
+
+class ScaleTexture : public Texture {
+public:
+	ScaleTexture(const Texture *t1, const Texture *t2) : tex1(t1), tex2(t2) { }
+	virtual ~ScaleTexture() { }
+
+	virtual TextureType GetType() const { return SCALE_TEX; }
+	virtual float GetGreyValue(const UV &uv) const;
+	virtual Spectrum GetColorValue(const UV &uv) const;
+	virtual float GetAlphaValue(const UV &uv) const;
+
+	virtual const UV GetDuDv() const;
+
+	virtual void AddReferencedTextures(std::set<const Texture *> &referencedTexs) const {
+		Texture::AddReferencedTextures(referencedTexs);
+
+		tex1->AddReferencedTextures(referencedTexs);
+		tex2->AddReferencedTextures(referencedTexs);
+	}
+
+	const Texture *GetTexture1() const { return tex1; }
+	const Texture *GetTexture2() const { return tex2; }
+
+private:
+	const Texture *tex1;
+	const Texture *tex2;
+};
+
+//------------------------------------------------------------------------------
+// FresnelApproxN & FresnelApproxK texture
+//
+// Used mostly to emulate LuxRender FresnelColor texture.
+//------------------------------------------------------------------------------
+
+class FresnelApproxNTexture : public Texture {
+public:
+	FresnelApproxNTexture(const Texture *t) : tex(t) { }
+	virtual ~FresnelApproxNTexture() { }
+
+	virtual TextureType GetType() const { return FRESNEL_APPROX_N; }
+	virtual float GetGreyValue(const UV &uv) const;
+	virtual Spectrum GetColorValue(const UV &uv) const;
+	virtual float GetAlphaValue(const UV &uv) const;
+
+	virtual const UV GetDuDv() const;
+
+	virtual void AddReferencedTextures(std::set<const Texture *> &referencedTexs) const {
+		Texture::AddReferencedTextures(referencedTexs);
+
+		tex->AddReferencedTextures(referencedTexs);
+	}
+
+	const Texture *GetTexture() const { return tex; }
+
+private:
+	const Texture *tex;
+};
+
+class FresnelApproxKTexture : public Texture {
+public:
+	FresnelApproxKTexture(const Texture *t) : tex(t) { }
+	virtual ~FresnelApproxKTexture() { }
+
+	virtual TextureType GetType() const { return FRESNEL_APPROX_K; }
+	virtual float GetGreyValue(const UV &uv) const;
+	virtual Spectrum GetColorValue(const UV &uv) const;
+	virtual float GetAlphaValue(const UV &uv) const;
+
+	virtual const UV GetDuDv() const;
+
+	virtual void AddReferencedTextures(std::set<const Texture *> &referencedTexs) const {
+		Texture::AddReferencedTextures(referencedTexs);
+
+		tex->AddReferencedTextures(referencedTexs);
+	}
+
+	const Texture *GetTexture() const { return tex; }
+
+private:
+	const Texture *tex;
 };
 
 } }

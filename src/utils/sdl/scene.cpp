@@ -357,7 +357,7 @@ void Scene::AddObject(const std::string &objName, const Properties &props) {
 		throw std::runtime_error("Syntax error in object .ply file name: " + objName);
 
 	// Check if I have to calculate normal or not
-	const bool usePlyNormals = (props.GetInt(key + ".useplynormals", 0) != 0);
+	const bool usePlyNormals = props.GetBoolean(key + ".useplynormals", false);
 
 	// Check if I have to use an instance mesh or not
 	ExtMesh *meshObject;
@@ -599,6 +599,20 @@ Texture *Scene::CreateTexture(const std::string &texName, const Properties &prop
 	} else if (texType == "constfloat4") {
 		const std::vector<float> v = GetFloatParameters(props, propName + ".value", 4, "1.0 1.0 1.0 1.0");
 		return new ConstFloat4Texture(Spectrum(v.at(0), v.at(1), v.at(2)), v.at(3));
+	} else if (texType == "scale") {
+		const std::string tex1Name = GetStringParameters(props, propName + ".texture1", 1, "tex1").at(0);
+		const Texture *tex1 = GetTexture(tex1Name);
+		const std::string tex2Name = GetStringParameters(props, propName + ".texture2", 1, "tex2").at(0);
+		const Texture *tex2 = GetTexture(tex2Name);
+		return new ScaleTexture(tex1, tex2);
+	} else if (texType == "fresnelapproxn") {
+		const std::string texName = GetStringParameters(props, propName + ".texture", 1, "tex").at(0);
+		const Texture *tex = GetTexture(texName);
+		return new FresnelApproxNTexture(tex);
+	} else if (texType == "fresnelapproxk") {
+		const std::string texName = GetStringParameters(props, propName + ".texture", 1, "tex").at(0);
+		const Texture *tex = GetTexture(texName);
+		return new FresnelApproxKTexture(tex);
 	} else
 		throw std::runtime_error("Unknown texture type: " + texType);
 }
@@ -684,8 +698,10 @@ Material *Scene::CreateMaterial(const std::string &matName, const Properties &pr
 	} else if (matType == "archglass") {
 		Texture *kr = GetTexture(props.GetString(propName + ".kr", "1.0 1.0 1.0"));
 		Texture *kt = GetTexture(props.GetString(propName + ".kt", "1.0 1.0 1.0"));
+		Texture *ioroutside = GetTexture(props.GetString(propName + ".ioroutside", "1.0"));
+		Texture *iorinside = GetTexture(props.GetString(propName + ".iorinside", "1.5"));
 
-		return new ArchGlassMaterial(emissionTex, bumpTex, normalTex, kr, kt);
+		return new ArchGlassMaterial(emissionTex, bumpTex, normalTex, kr, kt, ioroutside, iorinside);
 	} else if (matType == "mix") {
 		Material *matA = matDefs.GetMaterial(props.GetString(propName + ".material1", "mat1"));
 		Material *matB = matDefs.GetMaterial(props.GetString(propName + ".material2", "mat2"));
@@ -707,7 +723,49 @@ Material *Scene::CreateMaterial(const std::string &matName, const Properties &pr
 		Texture *kt = GetTexture(props.GetString(propName + ".kt", "0.5 0.5 0.5"));
 
 		return new MatteTranslucentMaterial(emissionTex, bumpTex, normalTex, kr, kt);
-	} else 
+	} else if (matType == "glossy2") {
+		Texture *kd = GetTexture(props.GetString(propName + ".kd", "0.5 0.5 0.5"));
+		Texture *ks = GetTexture(props.GetString(propName + ".ks", "0.5 0.5 0.5"));
+		Texture *nu = GetTexture(props.GetString(propName + ".uroughness", "0.1"));
+		Texture *nv = GetTexture(props.GetString(propName + ".vroughness", "0.1"));
+		Texture *ka = GetTexture(props.GetString(propName + ".ka", "0.0"));
+		Texture *d = GetTexture(props.GetString(propName + ".d", "0.0"));
+		Texture *index = GetTexture(props.GetString(propName + ".index", "0.0"));
+		const bool multibounce = props.GetBoolean(propName + ".multibounce", false);
+
+		return new Glossy2Material(emissionTex, bumpTex, normalTex, kd, ks, nu, nv, ka, d, index, multibounce);
+	} else if (matType == "metal2") {
+		Texture *nu = GetTexture(props.GetString(propName + ".uroughness", "0.1"));
+		Texture *nv = GetTexture(props.GetString(propName + ".vroughness", "0.1"));
+
+		Texture *eta, *k;
+		if (props.IsDefined(propName + ".preset")) {
+			const std::string type = props.GetString(propName + ".preset", "aluminium");
+
+			if (type == "aluminium") {
+				eta = GetTexture("1.697 0.879833 0.530174");
+				k = GetTexture("9.30201 6.27604 4.89434");
+			} else if (type == "silver") {
+				eta = GetTexture("0.155706 0.115925 0.138897");
+				k = GetTexture("4.88648 3.12787 2.17797");
+			} else if (type == "gold") {
+				eta = GetTexture("0.117959 0.354153 1.43897");
+				k = GetTexture("4.03165 2.39416 1.61967");
+			} else if (type == "copper") {
+				eta = GetTexture("0.134794 0.928983 1.10888");
+				k = GetTexture("3.98126 2.44098 2.16474");
+			} else if (type == "amorphous carbon") {
+				eta = GetTexture("2.94553 2.22816 1.98665");
+				k = GetTexture("0.876641 0.799505 0.821194");
+			} else
+				throw std::runtime_error("Unknown Metal2 preset: " + type);
+		} else {
+			eta = GetTexture(props.GetString(propName + ".n", "0.5 0.5 0.5"));
+			k = GetTexture(props.GetString(propName + ".k", "0.5 0.5 0.5"));
+		}
+
+		return new Metal2Material(emissionTex, bumpTex, normalTex, eta, k, nu, nv);
+	} else
 		throw std::runtime_error("Unknown material type: " + matType);
 }
 
@@ -775,7 +833,8 @@ float Scene::PickLightPdf() const {
 }
 
 bool Scene::Intersect(IntersectionDevice *device, const bool fromLight,
-		const float u0, Ray *ray, RayHit *rayHit, BSDF *bsdf, Spectrum *connectionThroughput) const {
+		const float passThrough, Ray *ray, RayHit *rayHit, BSDF *bsdf,
+		Spectrum *connectionThroughput) const {
 	*connectionThroughput = Spectrum(1.f, 1.f, 1.f);
 	for (;;) {
 		if (!device->TraceRay(ray, rayHit)) {
@@ -783,7 +842,7 @@ bool Scene::Intersect(IntersectionDevice *device, const bool fromLight,
 			return false;
 		} else {
 			// Check if it is a pass through point
-			bsdf->Init(fromLight, *this, *ray, *rayHit, u0);
+			bsdf->Init(fromLight, *this, *ray, *rayHit, passThrough);
 
 			// Mix material can have IsPassThrough() = true and return Spectrum(0.f)
 			Spectrum t = bsdf->GetPassThroughTransparency();

@@ -22,7 +22,8 @@
  ***************************************************************************/
 
 typedef enum {
-	MATTE, MIRROR, GLASS, METAL, ARCHGLASS, MIX, NULLMAT, MATTETRANSLUCENT
+	MATTE, MIRROR, GLASS, METAL, ARCHGLASS, MIX, NULLMAT, MATTETRANSLUCENT,
+	GLOSSY2, METAL2
 } MaterialType;
 
 typedef struct {
@@ -47,6 +48,7 @@ typedef struct {
 typedef struct {
     unsigned int krTexIndex;
 	unsigned int ktTexIndex;
+	unsigned int ousideIorTexIndex, iorTexIndex;
 } ArchGlassParam;
 
 typedef struct {
@@ -60,6 +62,24 @@ typedef struct {
 } MatteTranslucentParam;
 
 typedef struct {
+    unsigned int kdTexIndex;
+	unsigned int ksTexIndex;
+	unsigned int nuTexIndex;
+	unsigned int nvTexIndex;
+	unsigned int kaTexIndex;
+	unsigned int depthTexIndex;
+	unsigned int indexTexIndex;
+	int multibounce;
+} Glossy2Param;
+
+typedef struct {
+    unsigned int nTexIndex;
+	unsigned int kTexIndex;
+	unsigned int nuTexIndex;
+	unsigned int nvTexIndex;
+} Metal2Param;
+
+typedef struct {
 	MaterialType type;
 	unsigned int emitTexIndex, bumpTexIndex, normalTexIndex;
 	union {
@@ -71,6 +91,8 @@ typedef struct {
 		MixParam mix;
 		// NULLMAT has no parameters
 		MatteTranslucentParam matteTranslucent;
+		Glossy2Param glossy2;
+		Metal2Param metal2;
 	};
 } Material;
 
@@ -78,5 +100,5 @@ typedef struct {
 // Some macro trick in order to have more readable code
 //------------------------------------------------------------------------------
 
-#define MATERIALS_PARAM_DECL ,__global Material *mats, __global Texture *texs
-#define MATERIALS_PARAM ,mats, texs
+#define MATERIALS_PARAM_DECL , __global Material *mats TEXTURES_PARAM_DECL
+#define MATERIALS_PARAM , mats TEXTURES_PARAM
