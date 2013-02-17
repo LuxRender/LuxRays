@@ -67,9 +67,9 @@ bool RTPathOCLRenderEngine::WaitNewFrame()
 			t->SetAssignedTaskCount(taskCount);
 			//printf(" %d(%.3f)", t->GetAssignedTaskCount(), t->GetFrameTime());
 			continue;
-		}
-		double sampleTime = t->GetFrameTime()*taskCount/t->GetAssignedTaskCount();
-		t->SetAssignedTaskCount(taskCount*minSampleTime/sampleTime);
+			}
+			double sampleTime = t->GetFrameTime() * taskCount / t->GetAssignedTaskCount();
+			t->SetAssignedTaskCount(taskCount * minSampleTime / sampleTime);
 		//printf(" %d(%.3f)", t->GetAssignedTaskCount(), t->GetFrameTime());
 	}
 	//printf("\n");

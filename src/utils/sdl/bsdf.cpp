@@ -24,57 +24,52 @@
 
 namespace luxrays { namespace sdl {
 
-void BSDF::Init(const bool fromL, const Scene &scene, const Ray &ray,
+void BSDF::Init(const bool fixedFromLight, const Scene &scene, const Ray &ray,
 		const RayHit &rayHit, const float u0) {
-	assert (!rayHit.Miss());
+	hitPoint.fromLight = fixedFromLight;
+	hitPoint.passThroughEvent = u0;
 
-	fromLight = fromL;
-	passThroughEvent = u0;
+	hitPoint.p = ray(rayHit.t);
+	hitPoint.fixedDir = -ray.d;
 
-	hitPoint = ray(rayHit.t);
-	hitPointB1 = rayHit.b1;
-	hitPointB2 = rayHit.b2;
-	fixedDir = -ray.d;
-
-	const u_int currentTriangleIndex = rayHit.index;
-	const u_int currentMeshIndex = scene.dataSet->GetMeshID(currentTriangleIndex);
+	const u_int meshIndex = scene.dataSet->GetMeshID(rayHit.index);
 
 	// Get the triangle
-	mesh = scene.meshDefs.GetExtMesh(currentMeshIndex);
-	triIndex = scene.dataSet->GetMeshTriangleID(currentTriangleIndex);
+	mesh = scene.meshDefs.GetExtMesh(meshIndex);
+	triIndex = scene.dataSet->GetMeshTriangleID(rayHit.index);
 
 	// Get the material
-	material = scene.objectMaterials[currentMeshIndex];
+	material = scene.objectMaterials[meshIndex];
 
 	// Interpolate face normal
-	geometryN = mesh->GetGeometryNormal(triIndex);
-	shadeN = mesh->InterpolateTriNormal(triIndex, rayHit.b1, rayHit.b2);
+	hitPoint.geometryN = mesh->GetGeometryNormal(triIndex);
+	hitPoint.shadeN = mesh->InterpolateTriNormal(triIndex, rayHit.b1, rayHit.b2);
 
 	// Check if it is a light source
 	if (material->IsLightSource())
-		triangleLightSource = scene.triangleLights[currentTriangleIndex];
+		triangleLightSource = scene.triangleLights[rayHit.index];
 	else
 		triangleLightSource = NULL;
 
 	// Interpolate UV coordinates
-	hitPointUV = mesh->InterpolateTriUV(triIndex, rayHit.b1, rayHit.b2);
+	hitPoint.uv = mesh->InterpolateTriUV(triIndex, rayHit.b1, rayHit.b2);
 
 	// Check if I have to apply normal mapping
 	if (material->HasNormalTex()) {
 		// Apply normal mapping
 		const Texture *nm = material->GetNormalTexture();
-		const Spectrum color = nm->GetColorValue(hitPointUV);
+		const Spectrum color = nm->GetColorValue(this->hitPoint);
 
 		const float x = 2.f * color.r - 1.f;
 		const float y = 2.f * color.g - 1.f;
 		const float z = 2.f * color.b - 1.f;
 
 		Vector v1, v2;
-		CoordinateSystem(Vector(shadeN), &v1, &v2);
-		shadeN = Normalize(Normal(
-				v1.x * x + v2.x * y + shadeN.x * z,
-				v1.y * x + v2.y * y + shadeN.y * z,
-				v1.z * x + v2.z * y + shadeN.z * z));
+		CoordinateSystem(Vector(hitPoint.shadeN), &v1, &v2);
+		hitPoint.shadeN = Normalize(Normal(
+				v1.x * x + v2.x * y + hitPoint.shadeN.x * z,
+				v1.y * x + v2.y * y + hitPoint.shadeN.y * z,
+				v1.z * x + v2.z * y + hitPoint.shadeN.z * z));
 	}
 
 	// Check if I have to apply bump mapping
@@ -83,13 +78,18 @@ void BSDF::Init(const bool fromL, const Scene &scene, const Ray &ray,
 		const Texture *bm = material->GetBumpTexture();
 		const UV &dudv = bm->GetDuDv();
 
-		const float b0 = bm->GetGreyValue(hitPointUV);
+		const float b0 = bm->GetGreyValue(this->hitPoint);
 
-		const UV uvdu(hitPointUV.u + dudv.u, hitPointUV.v);
-		const float bu = bm->GetGreyValue(uvdu);
+		// This is a simple trick. The correct code would require differential information.
+		HitPoint tmpHitPoint = this->hitPoint;
+		tmpHitPoint.uv.u = tmpHitPoint.uv.u + dudv.u;
+		tmpHitPoint.uv.v = tmpHitPoint.uv.v;
+		const float bu = bm->GetGreyValue(tmpHitPoint);
 
-		const UV uvdv(hitPointUV.u, hitPointUV.v + dudv.v);
-		const float bv = bm->GetGreyValue(uvdv);
+		// This is a simple trick. The correct code would require differential information.
+		tmpHitPoint.uv.u = tmpHitPoint.uv.u;
+		tmpHitPoint.uv.v = tmpHitPoint.uv.v + dudv.u;
+		const float bv = bm->GetGreyValue(tmpHitPoint);
 
 		// bumpScale is a fixed scale factor to try to more closely match
 		// LuxRender bump mapping
@@ -97,24 +97,24 @@ void BSDF::Init(const bool fromL, const Scene &scene, const Ray &ray,
 		const Vector bump(bumpScale * (bu - b0), bumpScale * (bv - b0), 1.f);
 
 		Vector v1, v2;
-		CoordinateSystem(Vector(shadeN), &v1, &v2);
-		shadeN = Normalize(Normal(
-				v1.x * bump.x + v2.x * bump.y + shadeN.x * bump.z,
-				v1.y * bump.x + v2.y * bump.y + shadeN.y * bump.z,
-				v1.z * bump.x + v2.z * bump.y + shadeN.z * bump.z));
+		CoordinateSystem(Vector(hitPoint.shadeN), &v1, &v2);
+		hitPoint.shadeN = Normalize(Normal(
+				v1.x * bump.x + v2.x * bump.y + hitPoint.shadeN.x * bump.z,
+				v1.y * bump.x + v2.y * bump.y + hitPoint.shadeN.y * bump.z,
+				v1.z * bump.x + v2.z * bump.y + hitPoint.shadeN.z * bump.z));
 	}
 
-	frame.SetFromZ(shadeN);
+	frame.SetFromZ(hitPoint.shadeN);
 }
 
 Spectrum BSDF::Evaluate(const Vector &generatedDir,
 		BSDFEvent *event, float *directPdfW, float *reversePdfW) const {
-	const Vector &eyeDir = fromLight ? generatedDir : fixedDir;
-	const Vector &lightDir = fromLight ? fixedDir : generatedDir;
+	const Vector &eyeDir = hitPoint.fromLight ? generatedDir : hitPoint.fixedDir;
+	const Vector &lightDir = hitPoint.fromLight ? hitPoint.fixedDir : generatedDir;
 
-	const float dotLightDirNG = Dot(lightDir, geometryN);
+	const float dotLightDirNG = Dot(lightDir, hitPoint.geometryN);
 	const float absDotLightDirNG = fabsf(dotLightDirNG);
-	const float dotEyeDirNG = Dot(eyeDir, geometryN);
+	const float dotEyeDirNG = Dot(eyeDir, hitPoint.geometryN);
 	const float absDotEyeDirNG = fabsf(dotEyeDirNG);
 
 	if ((absDotLightDirNG < DEFAULT_COS_EPSILON_STATIC) ||
@@ -128,13 +128,13 @@ Spectrum BSDF::Evaluate(const Vector &generatedDir,
 
 	const Vector localLightDir = frame.ToLocal(lightDir);
 	const Vector localEyeDir = frame.ToLocal(eyeDir);
-	const Spectrum result = material->Evaluate(fromLight, hitPointUV, localLightDir, localEyeDir,
+	const Spectrum result = material->Evaluate(this->hitPoint, localLightDir, localEyeDir,
 			event, directPdfW, reversePdfW);
 
 	// Adjoint BSDF
-	if (fromLight) {
-		const float absDotLightDirNS = AbsDot(lightDir, shadeN);
-		const float absDotEyeDirNS = AbsDot(eyeDir, shadeN);
+	if (hitPoint.fromLight) {
+		const float absDotLightDirNS = AbsDot(lightDir, hitPoint.shadeN);
+		const float absDotEyeDirNS = AbsDot(eyeDir, hitPoint.shadeN);
 		return result * ((absDotLightDirNS * absDotEyeDirNG) / (absDotEyeDirNS * absDotLightDirNG));
 	} else
 		return result;
@@ -142,50 +142,48 @@ Spectrum BSDF::Evaluate(const Vector &generatedDir,
 
 Spectrum BSDF::Sample(Vector *sampledDir,
 		const float u0, const float u1,
-		float *pdfW, float *cosSampledDir, BSDFEvent *event) const {
-	Vector localFixedDir = frame.ToLocal(fixedDir);
+		float *pdfW, float *absCosSampledDir, BSDFEvent *event) const {
+	Vector localFixedDir = frame.ToLocal(hitPoint.fixedDir);
 	Vector localSampledDir;
 
-	Spectrum result = material->Sample(fromLight, hitPointUV,
-			localFixedDir, &localSampledDir, u0, u1, passThroughEvent,
-			pdfW, cosSampledDir, event);
+	Spectrum result = material->Sample(this->hitPoint,
+			localFixedDir, &localSampledDir, u0, u1, hitPoint.passThroughEvent,
+			pdfW, absCosSampledDir, event);
 	if (result.Black())
 		return result;
 
 	*sampledDir = frame.ToWorld(localSampledDir);
 
 	// Adjoint BSDF
-	if (fromLight) {
+	if (hitPoint.fromLight) {
 		const float absDotFixedDirNS = fabsf(localFixedDir.z);
 		const float absDotSampledDirNS = fabsf(localSampledDir.z);
-		const float absDotFixedDirNG = AbsDot(fixedDir, geometryN);
-		const float absDotSampledDirNG = AbsDot(*sampledDir, geometryN);
+		const float absDotFixedDirNG = AbsDot(hitPoint.fixedDir, hitPoint.geometryN);
+		const float absDotSampledDirNG = AbsDot(*sampledDir, hitPoint.geometryN);
 		return result * ((absDotFixedDirNS * absDotSampledDirNG) / (absDotSampledDirNS * absDotFixedDirNG));
 	} else
 		return result;
 }
 
 void BSDF::Pdf(const Vector &sampledDir, float *directPdfW, float *reversePdfW) const {
-	const Vector &eyeDir = fromLight ? sampledDir : fixedDir;
-	const Vector &lightDir = fromLight ? fixedDir : sampledDir;
+	const Vector &eyeDir = hitPoint.fromLight ? sampledDir : hitPoint.fixedDir;
+	const Vector &lightDir = hitPoint.fromLight ? hitPoint.fixedDir : sampledDir;
 	Vector localLightDir = frame.ToLocal(lightDir);
 	Vector localEyeDir = frame.ToLocal(eyeDir);
 
-	material->Pdf(fromLight, hitPointUV, localLightDir, localEyeDir, directPdfW, reversePdfW);
+	material->Pdf(this->hitPoint, localLightDir, localEyeDir, directPdfW, reversePdfW);
 }
 
-Spectrum BSDF::GetEmittedRadiance(const Scene *scene,
-			float *directPdfA,
-			float *emissionPdfW) const {
+Spectrum BSDF::GetEmittedRadiance(float *directPdfA, float *emissionPdfW) const {
 	return triangleLightSource ? 
-		triangleLightSource->GetRadiance(scene, fixedDir, hitPointUV, directPdfA, emissionPdfW) :
+		triangleLightSource->GetRadiance(this->hitPoint, directPdfA, emissionPdfW) :
 		Spectrum();
 }
 
 Spectrum BSDF::GetPassThroughTransparency() const {
-	const Vector localFixedDir = frame.ToLocal(fixedDir);
+	const Vector localFixedDir = frame.ToLocal(hitPoint.fixedDir);
 
-	return material->GetPassThroughTransparency(fromLight, hitPointUV, localFixedDir, passThroughEvent);
+	return material->GetPassThroughTransparency(this->hitPoint, localFixedDir, hitPoint.passThroughEvent);
 }
 
 } }

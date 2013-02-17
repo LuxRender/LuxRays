@@ -49,10 +49,10 @@ static double PreciseClockTime()
 //------------------------------------------------------------------------------
 
 RTPathOCLRenderThread::RTPathOCLRenderThread(const u_int index,
-	OpenCLIntersectionDevice *device, PathOCLRenderEngine *re, boost::barrier *frameBarrier) : 
+	OpenCLIntersectionDevice *device, PathOCLRenderEngine *re) : 
 	PathOCLRenderThread(index, device, re) {
-	m_frameBarrier = frameBarrier;
-	m_assignedTaskCount = renderEngine->taskCount;
+	frameBarrier = ((RTPathOCLRenderEngine *)re)->frameBarrier;
+	assignedTaskCount = renderEngine->taskCount;
 }
 
 RTPathOCLRenderThread::~RTPathOCLRenderThread() {
@@ -62,65 +62,65 @@ void RTPathOCLRenderThread::Interrupt() {
 }
 
 void RTPathOCLRenderThread::BeginEdit() {
-	m_editMutex.lock();
+	editMutex.lock();
 }
 
 void RTPathOCLRenderThread::EndEdit(const EditActionList &editActions) {
 	if (editActions.Has(FILM_EDIT) || editActions.Has(MATERIAL_TYPES_EDIT)) {
-		m_editMutex.unlock();
+		editMutex.unlock();
 		StopRenderThread();
 
-		m_updateActions.AddActions(editActions.GetActions());
+		updateActions.AddActions(editActions.GetActions());
 		UpdateOclBuffers();
 		StartRenderThread();
 	} else {
-		m_updateActions.AddActions(editActions.GetActions());
-		m_editMutex.unlock();
+		updateActions.AddActions(editActions.GetActions());
+		editMutex.unlock();
 	}
 }
 
 void RTPathOCLRenderThread::UpdateOclBuffers() {
-	m_editMutex.lock();
+	editMutex.lock();
 	//--------------------------------------------------------------------------
 	// Update OpenCL buffers
 	//--------------------------------------------------------------------------
 
-	if (m_updateActions.Has(FILM_EDIT)) {
+	if (updateActions.Has(FILM_EDIT)) {
 		// Resize the Frame Buffer
 		InitFrameBuffer();
 	}
 
-	if (m_updateActions.Has(CAMERA_EDIT)) {
+	if (updateActions.Has(CAMERA_EDIT)) {
 		// Update Camera
 		InitCamera();
 	}
 
-	if (m_updateActions.Has(GEOMETRY_EDIT)) {
+	if (updateActions.Has(GEOMETRY_EDIT)) {
 		// Update Scene Geometry
 		InitGeometry();
 	}
 
-	if (m_updateActions.Has(MATERIALS_EDIT) || m_updateActions.Has(MATERIAL_TYPES_EDIT)) {
+	if (updateActions.Has(MATERIALS_EDIT) || updateActions.Has(MATERIAL_TYPES_EDIT)) {
 		// Update Scene Materials
 		InitMaterials();
 	}
 
-	if  (m_updateActions.Has(AREALIGHTS_EDIT)) {
+	if  (updateActions.Has(AREALIGHTS_EDIT)) {
 		// Update Scene Area Lights
 		InitTriangleAreaLights();
 	}
 
-	if  (m_updateActions.Has(INFINITELIGHT_EDIT)) {
+	if  (updateActions.Has(INFINITELIGHT_EDIT)) {
 		// Update Scene Infinite Light
 		InitInfiniteLight();
 	}
 
-	if  (m_updateActions.Has(SUNLIGHT_EDIT)) {
+	if  (updateActions.Has(SUNLIGHT_EDIT)) {
 		// Update Scene Sun Light
 		InitSunLight();
 	}
 
-	if  (m_updateActions.Has(SKYLIGHT_EDIT)) {
+	if  (updateActions.Has(SKYLIGHT_EDIT)) {
 		// Update Scene Sun Light
 		InitSkyLight();
 	}
@@ -129,11 +129,11 @@ void RTPathOCLRenderThread::UpdateOclBuffers() {
 	// Recompile Kernels if required
 	//--------------------------------------------------------------------------
 
-	if (m_updateActions.Has(FILM_EDIT) || m_updateActions.Has(MATERIAL_TYPES_EDIT))
+	if (updateActions.Has(FILM_EDIT) || updateActions.Has(MATERIAL_TYPES_EDIT))
 		InitKernels();
 
-	m_updateActions.Reset();
-	m_editMutex.unlock();
+	updateActions.Reset();
+	editMutex.unlock();
 
 	SetKernelArgs();
 
@@ -166,13 +166,13 @@ void RTPathOCLRenderThread::RenderThreadImpl() {
 
 	try {
 		while (!boost::this_thread::interruption_requested()) {
-			if (m_updateActions.HasAnyAction()) {
+			if (updateActions.HasAnyAction()) {
 				UpdateOclBuffers();
 				iterations = minIterationsToShow;
 			}
 
 			double startTime = PreciseClockTime();
-			u_int taskCount = m_assignedTaskCount;
+			u_int taskCount = assignedTaskCount;
 
 			for (u_int i = 0; i < iterations; ++i) {
 				// Trace rays
@@ -185,8 +185,8 @@ void RTPathOCLRenderThread::RenderThreadImpl() {
 
 			oclQueue.finish();
 			double frameTime = PreciseClockTime() - startTime;
-			m_balanceMutex.lock();
-			m_frameTime = frameTime;
+			balanceMutex.lock();
+			frameTime = frameTime;
 			// Async. transfer of the frame buffer
 			oclQueue.enqueueReadBuffer(*frameBufferBuff, CL_FALSE, 0,
 				frameBufferBuff->getInfo<CL_MEM_SIZE>(), frameBuffer);
@@ -201,8 +201,8 @@ void RTPathOCLRenderThread::RenderThreadImpl() {
 				sizeof(slg::ocl::GPUTaskStats) * taskCount, gpuTaskStats);
 
 			oclQueue.finish();
-			m_balanceMutex.unlock();
-			m_frameBarrier->wait();
+			balanceMutex.unlock();
+			frameBarrier->wait();
 			//iterations = 1;
 		}
 		//SLG_LOG("[RTPathOCLRenderThread::" << threadIndex << "] Rendering thread halted");
@@ -221,7 +221,7 @@ void RTPathOCLRenderThread::SetAssignedTaskCount(u_int taskCount)
 		taskCount = renderEngine->taskCount;
 	if (taskCount < advancePathsWorkGroupSize)
 		taskCount = advancePathsWorkGroupSize;
-	m_assignedTaskCount = taskCount/advancePathsWorkGroupSize*advancePathsWorkGroupSize;
+	assignedTaskCount = taskCount/advancePathsWorkGroupSize*advancePathsWorkGroupSize;
 }
 
 }

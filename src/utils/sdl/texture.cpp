@@ -29,9 +29,112 @@
 
 #include "luxrays/utils/sdl/sdl.h"
 #include "luxrays/utils/sdl/texture.h"
+#include "luxrays/utils/sdl/bsdf.h"
 
 using namespace luxrays;
 using namespace luxrays::sdl;
+
+//------------------------------------------------------------------------------
+// Texture utility functions
+//------------------------------------------------------------------------------
+
+// Perlin Noise Data
+#define NOISE_PERM_SIZE 256
+static int NoisePerm[2 * NOISE_PERM_SIZE] = {
+	151, 160, 137, 91, 90, 15, 131, 13, 201, 95, 96,
+	53, 194, 233, 7, 225, 140, 36, 103, 30, 69, 142,
+	// Rest of noise permutation table
+	8, 99, 37, 240, 21, 10, 23,
+	190, 6, 148, 247, 120, 234, 75, 0, 26, 197, 62, 94, 252, 219, 203, 117, 35, 11, 32, 57, 177, 33,
+	88, 237, 149, 56, 87, 174, 20, 125, 136, 171, 168, 68, 175, 74, 165, 71, 134, 139, 48, 27, 166,
+	77, 146, 158, 231, 83, 111, 229, 122, 60, 211, 133, 230, 220, 105, 92, 41, 55, 46, 245, 40, 244,
+	102, 143, 54, 65, 25, 63, 161, 1, 216, 80, 73, 209, 76, 132, 187, 208, 89, 18, 169, 200, 196,
+	135, 130, 116, 188, 159, 86, 164, 100, 109, 198, 173, 186, 3, 64, 52, 217, 226, 250, 124, 123,
+	5, 202, 38, 147, 118, 126, 255, 82, 85, 212, 207, 206, 59, 227, 47, 16, 58, 17, 182, 189, 28, 42,
+	223, 183, 170, 213, 119, 248, 152, 2, 44, 154, 163, 70, 221, 153, 101, 155, 167, 43, 172, 9,
+	129, 22, 39, 253, 19, 98, 108, 110, 79, 113, 224, 232, 178, 185, 112, 104, 218, 246, 97, 228,
+	251, 34, 242, 193, 238, 210, 144, 12, 191, 179, 162, 241, 81, 51, 145, 235, 249, 14, 239, 107,
+	49, 192, 214, 31, 181, 199, 106, 157, 184, 84, 204, 176, 115, 121, 50, 45, 127, 4, 150, 254,
+	138, 236, 205, 93, 222, 114, 67, 29, 24, 72, 243, 141, 128, 195, 78, 66, 215, 61, 156, 180,
+	151, 160, 137, 91, 90, 15,
+	131, 13, 201, 95, 96, 53, 194, 233, 7, 225, 140, 36, 103, 30, 69, 142, 8, 99, 37, 240, 21, 10, 23,
+	190, 6, 148, 247, 120, 234, 75, 0, 26, 197, 62, 94, 252, 219, 203, 117, 35, 11, 32, 57, 177, 33,
+	88, 237, 149, 56, 87, 174, 20, 125, 136, 171, 168, 68, 175, 74, 165, 71, 134, 139, 48, 27, 166,
+	77, 146, 158, 231, 83, 111, 229, 122, 60, 211, 133, 230, 220, 105, 92, 41, 55, 46, 245, 40, 244,
+	102, 143, 54, 65, 25, 63, 161, 1, 216, 80, 73, 209, 76, 132, 187, 208, 89, 18, 169, 200, 196,
+	135, 130, 116, 188, 159, 86, 164, 100, 109, 198, 173, 186, 3, 64, 52, 217, 226, 250, 124, 123,
+	5, 202, 38, 147, 118, 126, 255, 82, 85, 212, 207, 206, 59, 227, 47, 16, 58, 17, 182, 189, 28, 42,
+	223, 183, 170, 213, 119, 248, 152, 2, 44, 154, 163, 70, 221, 153, 101, 155, 167, 43, 172, 9,
+	129, 22, 39, 253, 19, 98, 108, 110, 79, 113, 224, 232, 178, 185, 112, 104, 218, 246, 97, 228,
+	251, 34, 242, 193, 238, 210, 144, 12, 191, 179, 162, 241, 81, 51, 145, 235, 249, 14, 239, 107,
+	49, 192, 214, 31, 181, 199, 106, 157, 184, 84, 204, 176, 115, 121, 50, 45, 127, 4, 150, 254,
+	138, 236, 205, 93, 222, 114, 67, 29, 24, 72, 243, 141, 128, 195, 78, 66, 215, 61, 156, 180
+};
+
+static float Grad(int x, int y, int z, float dx, float dy, float dz) {
+	const int h = NoisePerm[NoisePerm[NoisePerm[x] + y] + z] & 15;
+	const float u = h < 8 || h == 12 || h == 13 ? dx : dy;
+	const float v = h < 4 || h == 12 || h == 13 ? dy : dz;
+	return ((h & 1) ? -u : u) + ((h & 2) ? -v : v);
+}
+
+static float NoiseWeight(float t) {
+	const float t3 = t * t * t;
+	const float t4 = t3 * t;
+	return 6.f * t4 * t - 15.f * t4 + 10.f * t3;
+}
+
+static float Noise(float x, float y, float z) {
+	// Compute noise cell coordinates and offsets
+	int ix = Floor2Int(x);
+	int iy = Floor2Int(y);
+	int iz = Floor2Int(z);
+	const float dx = x - ix, dy = y - iy, dz = z - iz;
+	// Compute gradient weights
+	ix &= (NOISE_PERM_SIZE - 1);
+	iy &= (NOISE_PERM_SIZE - 1);
+	iz &= (NOISE_PERM_SIZE - 1);
+	const float w000 = Grad(ix, iy, iz, dx, dy, dz);
+	const float w100 = Grad(ix + 1, iy, iz, dx - 1, dy, dz);
+	const float w010 = Grad(ix, iy + 1, iz, dx, dy - 1, dz);
+	const float w110 = Grad(ix + 1, iy + 1, iz, dx - 1, dy - 1, dz);
+	const float w001 = Grad(ix, iy, iz + 1, dx, dy, dz - 1);
+	const float w101 = Grad(ix + 1, iy, iz + 1, dx - 1, dy, dz - 1);
+	const float w011 = Grad(ix, iy + 1, iz + 1, dx, dy - 1, dz - 1);
+	const float w111 = Grad(ix + 1, iy + 1, iz + 1, dx - 1, dy - 1, dz - 1);
+	// Compute trilinear interpolation of weights
+	const float wx = NoiseWeight(dx);
+	const float wy = NoiseWeight(dy);
+	const float wz = NoiseWeight(dz);
+	const float x00 = Lerp(wx, w000, w100);
+	const float x10 = Lerp(wx, w010, w110);
+	const float x01 = Lerp(wx, w001, w101);
+	const float x11 = Lerp(wx, w011, w111);
+	const float y0 = Lerp(wy, x00, x10);
+	const float y1 = Lerp(wy, x01, x11);
+	return Lerp(wz, y0, y1);
+}
+
+static float Noise(const Point &P) {
+	return Noise(P.x, P.y, P.z);
+}
+
+static float FBm(const Point &P, const float omega, const int maxOctaves) {
+	// Compute number of octaves for anti-aliased FBm
+	const float foctaves = Min(static_cast<float>(maxOctaves), 1.f);
+	const int octaves = Floor2Int(foctaves);
+	// Compute sum of octaves of noise for FBm
+	float sum = 0.f, lambda = 1.f, o = 1.f;
+	for (int i = 0; i < octaves; ++i) {
+		sum += o * Noise(lambda * P);
+		lambda *= 1.99f;
+		o *= omega;
+	}
+	const float partialOctave = foctaves - static_cast<float>(octaves);
+	sum += o * SmoothStep(.3f, .7f, partialOctave) *
+			Noise(lambda * P);
+	return sum;
+}
 
 //------------------------------------------------------------------------------
 // TextureDefinitions
@@ -88,7 +191,7 @@ u_int TextureDefinitions::GetTextureIndex(const std::string &name) {
 }
 
 //------------------------------------------------------------------------------
-// ImageMap texture
+// ImageMap
 //------------------------------------------------------------------------------
 
 ImageMap::ImageMap(const std::string &fileName, const float g) {
@@ -288,7 +391,7 @@ ImageMap::~ImageMap() {
 	delete[] pixels;
 }
 
-void ImageMap::writeImage(const std::string &fileName) const {
+void ImageMap::WriteImage(const std::string &fileName) const {
 	if (channelCount == 4) {
 		// RGBA image
 		FIBITMAP *dib = FreeImage_AllocateT(FIT_RGBAF, width, height, 128);
@@ -384,9 +487,6 @@ ImageMapCache::ImageMapCache() {
 }
 
 ImageMapCache::~ImageMapCache() {
-	for (size_t i = 0; i < imgMapInstances.size(); ++i)
-		delete imgMapInstances[i];
-
 	for (std::map<std::string, ImageMap *>::const_iterator it = maps.begin(); it != maps.end(); ++it)
 		delete it->second;
 }
@@ -414,15 +514,6 @@ ImageMap *ImageMapCache::GetImageMap(const std::string &fileName, const float ga
 void ImageMapCache::DefineImgMap(const std::string &name, ImageMap *tm) {
 	SDL_LOG("Define ImageMap: " << name);
 	maps.insert(std::make_pair(name, tm));
-}
-
-ImageMapInstance *ImageMapCache::GetImageMapInstance(const std::string &fileName, const float gamma,
-	const float gain, const float uScale, const float vScale, const float uDelta, const float vDelta) {
-	ImageMap *im = GetImageMap(fileName, gamma);
-	ImageMapInstance *imi = new ImageMapInstance(im, gain, uScale, vScale, uDelta, vDelta);
-	imgMapInstances.push_back(imi);
-
-	return imi;
 }
 
 u_int ImageMapCache::GetImageMapIndex(const ImageMap *im) const {
@@ -492,17 +583,38 @@ Properties ConstFloat4Texture::ToProperties(const ImageMapCache &imgMapCache) co
 // ImageMap texture
 //------------------------------------------------------------------------------
 
+ImageMapTexture::ImageMapTexture(const ImageMap * im, const TextureMapping *mp, const float g) :
+	imgMap(im), mapping(mp), gain(g) {
+	const UV o = mapping->Map(UV(0.f, 0.f));
+	const UV i = mapping->Map(UV(imgMap->GetWidth(), imgMap->GetHeight()));
+	const UV io = i - o;
+
+	DuDv.u = 1.f / io.u;
+	DuDv.v = 1.f / io.v;
+}
+
+float ImageMapTexture::GetGreyValue(const HitPoint &hitPoint) const {
+	return gain * imgMap->GetGrey(mapping->Map(hitPoint.uv));
+}
+
+Spectrum ImageMapTexture::GetColorValue(const HitPoint &hitPoint) const {
+	return gain * imgMap->GetColor(mapping->Map(hitPoint.uv));
+}
+
+float ImageMapTexture::GetAlphaValue(const HitPoint &hitPoint) const {
+	return imgMap->GetAlpha(mapping->Map(hitPoint.uv));
+}
+
 Properties ImageMapTexture::ToProperties(const ImageMapCache &imgMapCache) const {
 	Properties props;
 
 	const std::string name = GetName();
 	props.SetString("scene.textures." + name + ".type", "imagemap");
 	props.SetString("scene.textures." + name + ".file", "imagemap-" + 
-		(boost::format("%05d") % imgMapCache.GetImageMapIndex(imgMapInstance->GetImgMap())).str() + ".exr");
+		(boost::format("%05d") % imgMapCache.GetImageMapIndex(imgMap)).str() + ".exr");
 	props.SetString("scene.textures." + name + ".gamma", "1.0");
-	props.SetString("scene.textures." + name + ".gain", ToString(imgMapInstance->GetGain()));
-	props.SetString("scene.textures." + name + ".uvscale", ToString(imgMapInstance->GetUScale()) + " " + ToString(imgMapInstance->GetVScale()));
-	props.SetString("scene.textures." + name + ".uvdelta", ToString(imgMapInstance->GetUDelta()) + " " + ToString(imgMapInstance->GetVDelta()));
+	props.SetString("scene.textures." + name + ".gain", ToString(gain));
+	props.Load(mapping->ToProperties("scene.textures." + name + ".mapping"));
 
 	return props;
 }
@@ -511,19 +623,19 @@ Properties ImageMapTexture::ToProperties(const ImageMapCache &imgMapCache) const
 // Scale texture
 //------------------------------------------------------------------------------
 
-float ScaleTexture::GetGreyValue(const UV &uv) const {
-	return tex1->GetGreyValue(uv) * tex2->GetGreyValue(uv);
+float ScaleTexture::GetGreyValue(const HitPoint &hitPoint) const {
+	return tex1->GetGreyValue(hitPoint) * tex2->GetGreyValue(hitPoint);
 }
 
-Spectrum ScaleTexture::GetColorValue(const UV &uv) const {
-	return tex1->GetColorValue(uv) * tex2->GetColorValue(uv);
+Spectrum ScaleTexture::GetColorValue(const HitPoint &hitPoint) const {
+	return tex1->GetColorValue(hitPoint) * tex2->GetColorValue(hitPoint);
 }
 
-float ScaleTexture::GetAlphaValue(const UV &uv) const {
-	return tex1->GetAlphaValue(uv) * tex2->GetAlphaValue(uv);
+float ScaleTexture::GetAlphaValue(const HitPoint &hitPoint) const {
+	return tex1->GetAlphaValue(hitPoint) * tex2->GetAlphaValue(hitPoint);
 }
 
-const UV ScaleTexture::GetDuDv() const {
+UV ScaleTexture::GetDuDv() const {
 	const UV uv1 = tex1->GetDuDv();
 	const UV uv2 = tex2->GetDuDv();
 
@@ -573,35 +685,35 @@ Spectrum FresnelApproxK(const Spectrum &Fr) {
 		(Spectrum(1.f) - reflectance));
 }
 
-float FresnelApproxNTexture::GetGreyValue(const UV &uv) const {
-	return FresnelApproxN(tex->GetGreyValue(uv));
+float FresnelApproxNTexture::GetGreyValue(const HitPoint &hitPoint) const {
+	return FresnelApproxN(tex->GetGreyValue(hitPoint));
 }
 
-Spectrum FresnelApproxNTexture::GetColorValue(const UV &uv) const {
-	return FresnelApproxN(tex->GetColorValue(uv));
+Spectrum FresnelApproxNTexture::GetColorValue(const HitPoint &hitPoint) const {
+	return FresnelApproxN(tex->GetColorValue(hitPoint));
 }
 
-float FresnelApproxNTexture::GetAlphaValue(const UV &uv) const {
-	return tex->GetAlphaValue(uv);
+float FresnelApproxNTexture::GetAlphaValue(const HitPoint &hitPoint) const {
+	return tex->GetAlphaValue(hitPoint);
 }
 
-const UV FresnelApproxNTexture::GetDuDv() const {
+UV FresnelApproxNTexture::GetDuDv() const {
 	return tex->GetDuDv();
 }
 
-float FresnelApproxKTexture::GetGreyValue(const UV &uv) const {
-	return FresnelApproxK(tex->GetGreyValue(uv));
+float FresnelApproxKTexture::GetGreyValue(const HitPoint &hitPoint) const {
+	return FresnelApproxK(tex->GetGreyValue(hitPoint));
 }
 
-Spectrum FresnelApproxKTexture::GetColorValue(const UV &uv) const {
-	return FresnelApproxK(tex->GetColorValue(uv));
+Spectrum FresnelApproxKTexture::GetColorValue(const HitPoint &hitPoint) const {
+	return FresnelApproxK(tex->GetColorValue(hitPoint));
 }
 
-float FresnelApproxKTexture::GetAlphaValue(const UV &uv) const {
-	return tex->GetAlphaValue(uv);
+float FresnelApproxKTexture::GetAlphaValue(const HitPoint &hitPoint) const {
+	return tex->GetAlphaValue(hitPoint);
 }
 
-const UV FresnelApproxKTexture::GetDuDv() const {
+UV FresnelApproxKTexture::GetDuDv() const {
 	return tex->GetDuDv();
 }
 
@@ -621,6 +733,244 @@ Properties FresnelApproxKTexture::ToProperties(const ImageMapCache &imgMapCache)
 	const std::string name = GetName();
 	props.SetString("scene.textures." + name + ".type", "fresnelapproxk");
 	props.SetString("scene.textures." + name + ".texture", tex->GetName());
+
+	return props;
+}
+
+//------------------------------------------------------------------------------
+// CheckerBoard 2D & 3D texture
+//------------------------------------------------------------------------------
+
+float CheckerBoard2DTexture::GetGreyValue(const HitPoint &hitPoint) const {
+	const UV uv = mapping->Map(hitPoint.uv);
+	if ((Floor2Int(uv.u) + Floor2Int(uv.v)) % 2 == 0)
+		return tex1->GetGreyValue(hitPoint);
+	else
+		return tex2->GetGreyValue(hitPoint);
+}
+
+Spectrum CheckerBoard2DTexture::GetColorValue(const HitPoint &hitPoint) const {
+	const UV uv = mapping->Map(hitPoint.uv);
+	if ((Floor2Int(uv.u) + Floor2Int(uv.v)) % 2 == 0)
+		return tex1->GetColorValue(hitPoint);
+	else
+		return tex2->GetColorValue(hitPoint);
+}
+
+float CheckerBoard2DTexture::GetAlphaValue(const HitPoint &hitPoint) const {
+	const UV uv = mapping->Map(hitPoint.uv);
+	if ((Floor2Int(uv.u) + Floor2Int(uv.v)) % 2 == 0)
+		return tex1->GetAlphaValue(hitPoint);
+	else
+		return tex2->GetAlphaValue(hitPoint);
+}
+
+UV CheckerBoard2DTexture::GetDuDv() const {
+	const UV uv1 = tex1->GetDuDv();
+	const UV uv2 = tex2->GetDuDv();
+
+	return UV(Max(uv1.u, uv2.u), Max(uv1.v, uv2.v));
+}
+
+Properties CheckerBoard2DTexture::ToProperties(const ImageMapCache &imgMapCache) const {
+	Properties props;
+
+	const std::string name = GetName();
+	props.SetString("scene.textures." + name + ".type", "checkerboard2d");
+	props.SetString("scene.textures." + name + ".texture1", tex1->GetName());
+	props.SetString("scene.textures." + name + ".texture2", tex2->GetName());
+	props.Load(mapping->ToProperties("scene.textures." + name + ".mapping"));
+
+	return props;
+}
+
+float CheckerBoard3DTexture::GetGreyValue(const HitPoint &hitPoint) const {
+	const Point p = mapping->Map(hitPoint.p);
+	if ((Floor2Int(p.x) + Floor2Int(p.y) + Floor2Int(p.z)) % 2 == 0)
+		return tex1->GetGreyValue(hitPoint);
+	else
+		return tex2->GetGreyValue(hitPoint);
+}
+
+Spectrum CheckerBoard3DTexture::GetColorValue(const HitPoint &hitPoint) const {
+	const Point p = mapping->Map(hitPoint.p);
+	if ((Floor2Int(p.x) + Floor2Int(p.y) + Floor2Int(p.z)) % 2 == 0)
+		return tex1->GetColorValue(hitPoint);
+	else
+		return tex2->GetColorValue(hitPoint);
+}
+
+float CheckerBoard3DTexture::GetAlphaValue(const HitPoint &hitPoint) const {
+	const Point p = mapping->Map(hitPoint.p);
+	if ((Floor2Int(p.x) + Floor2Int(p.y) + Floor2Int(p.z)) % 2 == 0)
+		return tex1->GetAlphaValue(hitPoint);
+	else
+		return tex2->GetAlphaValue(hitPoint);
+}
+
+UV CheckerBoard3DTexture::GetDuDv() const {
+	const UV uv1 = tex1->GetDuDv();
+	const UV uv2 = tex2->GetDuDv();
+
+	return UV(Max(uv1.u, uv2.u), Max(uv1.v, uv2.v));
+}
+
+Properties CheckerBoard3DTexture::ToProperties(const ImageMapCache &imgMapCache) const {
+	Properties props;
+
+	const std::string name = GetName();
+	props.SetString("scene.textures." + name + ".type", "checkerboard3d");
+	props.SetString("scene.textures." + name + ".texture1", tex1->GetName());
+	props.SetString("scene.textures." + name + ".texture2", tex2->GetName());
+	props.Load(mapping->ToProperties("scene.textures." + name + ".mapping"));
+
+	return props;
+}
+
+//------------------------------------------------------------------------------
+// Mix texture
+//------------------------------------------------------------------------------
+
+float MixTexture::GetGreyValue(const HitPoint &hitPoint) const {
+	const float amt = Clamp(amount->GetGreyValue(hitPoint), 0.f, 1.f);
+	const float value1 = tex1->GetGreyValue(hitPoint);
+	const float value2 = tex2->GetGreyValue(hitPoint);
+
+	return Lerp(amt, value1, value2);
+}
+
+Spectrum MixTexture::GetColorValue(const HitPoint &hitPoint) const {
+	const float amt = Clamp(amount->GetGreyValue(hitPoint), 0.f, 1.f);
+	const Spectrum value1 = tex1->GetColorValue(hitPoint);
+	const Spectrum value2 = tex2->GetColorValue(hitPoint);
+
+	return Lerp(amt, value1, value2);
+}
+
+float MixTexture::GetAlphaValue(const HitPoint &hitPoint) const {
+	const float amt = Clamp(amount->GetGreyValue(hitPoint), 0.f, 1.f);
+	const float value1 = tex1->GetAlphaValue(hitPoint);
+	const float value2 = tex2->GetAlphaValue(hitPoint);
+
+	return Lerp(amt, value1, value2);
+}
+
+UV MixTexture::GetDuDv() const {
+	const UV uv1 = amount->GetDuDv();
+	const UV uv2 = tex1->GetDuDv();
+	const UV uv3 = tex2->GetDuDv();
+
+	return UV(Max(Max(uv1.u, uv2.u), uv3.u), Max(Max(uv1.v, uv2.v), uv3.v));
+}
+
+Properties MixTexture::ToProperties(const ImageMapCache &imgMapCache) const {
+	Properties props;
+
+	const std::string name = GetName();
+	props.SetString("scene.textures." + name + ".type", "mix");
+	props.SetString("scene.textures." + name + ".amount", amount->GetName());
+	props.SetString("scene.textures." + name + ".texture1", tex1->GetName());
+	props.SetString("scene.textures." + name + ".texture2", tex2->GetName());
+
+	return props;
+}
+
+//------------------------------------------------------------------------------
+// FBM texture
+//------------------------------------------------------------------------------
+
+float FBMTexture::GetGreyValue(const HitPoint &hitPoint) const {
+	const Point p(mapping->Map(hitPoint.p));
+	const float value = FBm(p, omega, octaves);
+	
+	return value;
+}
+
+Spectrum FBMTexture::GetColorValue(const HitPoint &hitPoint) const {
+	return Spectrum(GetGreyValue(hitPoint));
+}
+
+float FBMTexture::GetAlphaValue(const HitPoint &hitPoint) const {
+	return GetGreyValue(hitPoint);
+}
+
+UV FBMTexture::GetDuDv() const {
+	return UV(0.001f, 0.001f);
+}
+
+Properties FBMTexture::ToProperties(const ImageMapCache &imgMapCache) const {
+	Properties props;
+
+	const std::string name = GetName();
+	props.SetString("scene.textures." + name + ".type", "fbm");
+	props.SetString("scene.textures." + name + ".octaves", ToString(octaves));
+	props.SetString("scene.textures." + name + ".roughness", ToString(omega));
+	props.Load(mapping->ToProperties("scene.textures." + name + ".mapping"));
+
+	return props;
+}
+
+//------------------------------------------------------------------------------
+// Marble texture
+//------------------------------------------------------------------------------
+
+Spectrum MarbleTexture::GetColorValue(const HitPoint &hitPoint) const {
+	Point P(mapping->Map(hitPoint.p));
+	P *= scale;
+
+	float marble = P.y + variation * FBm(P, omega, octaves);
+	float t = .5f + .5f * sinf(marble);
+	// Evaluate marble spline at _t_
+	static float c[9][3] = {
+		{ .58f, .58f, .6f},
+		{ .58f, .58f, .6f},
+		{ .58f, .58f, .6f},
+		{ .5f, .5f, .5f},
+		{ .6f, .59f, .58f},
+		{ .58f, .58f, .6f},
+		{ .58f, .58f, .6f},
+		{.2f, .2f, .33f},
+		{ .58f, .58f, .6f}
+	};
+#define NC  sizeof(c) / sizeof(c[0])
+#define NSEG (NC-3)
+	int first = Floor2Int(t * NSEG);
+	t = (t * NSEG - first);
+#undef NC
+#undef NSEG
+	Spectrum c0(c[first]), c1(c[first + 1]), c2(c[first + 2]), c3(c[first + 3]);
+	// Bezier spline evaluated with de Castilejau's algorithm
+	Spectrum s0(Lerp(t, c0, c1));
+	Spectrum s1(Lerp(t, c1, c2));
+	Spectrum s2(Lerp(t, c2, c3));
+	s0 = Lerp(t, s0, s1);
+	s1 = Lerp(t, s1, s2);
+	// Extra scale of 1.5 to increase variation among colors
+	return 1.5f * Lerp(t, s0, s1);
+}
+
+float MarbleTexture::GetGreyValue(const HitPoint &hitPoint) const {
+	return GetColorValue(hitPoint).Y();
+}
+
+float MarbleTexture::GetAlphaValue(const HitPoint &hitPoint) const {
+	return GetColorValue(hitPoint).Y();
+}
+
+UV MarbleTexture::GetDuDv() const {
+	return UV(0.001f, 0.001f);
+}
+
+Properties MarbleTexture::ToProperties(const ImageMapCache &imgMapCache) const {
+	Properties props;
+
+	const std::string name = GetName();
+	props.SetString("scene.textures." + name + ".type", "marble");
+	props.SetString("scene.textures." + name + ".octaves", ToString(octaves));
+	props.SetString("scene.textures." + name + ".roughness", ToString(omega));
+	props.SetString("scene.textures." + name + ".scale", ToString(scale));
+	props.SetString("scene.textures." + name + ".variation", ToString(variation));
+	props.Load(mapping->ToProperties("scene.textures." + name + ".mapping"));
 
 	return props;
 }

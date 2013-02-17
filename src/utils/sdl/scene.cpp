@@ -33,10 +33,10 @@
 #include <boost/format.hpp>
 
 #include "luxrays/core/dataset.h"
+#include "luxrays/core/intersectiondevice.h"
 #include "luxrays/utils/properties.h"
 #include "luxrays/utils/sdl/sdl.h"
 #include "luxrays/utils/sdl/scene.h"
-#include "luxrays/core/intersectiondevice.h"
 
 using namespace luxrays;
 using namespace luxrays::sdl;
@@ -166,7 +166,7 @@ Properties Scene::ToProperties(const std::string &directoryName) {
 		for (u_int i = 0; i < ims.size(); ++i) {
 			const std::string fileName = directoryName + "/imagemap-" + (boost::format("%05d") % i).str() + ".exr";
 			SDL_LOG("  " + fileName);
-			ims[i]->writeImage(fileName);
+			ims[i]->WriteImage(fileName);
 		}
 
 		// Write the texture information
@@ -206,14 +206,26 @@ Properties Scene::ToProperties(const std::string &directoryName) {
 
 std::vector<std::string> Scene::GetStringParameters(const Properties &prop, const std::string &paramName,
 		const u_int paramCount, const std::string &defaultValue) {
-	const std::vector<std::string> vf = prop.GetStringVector(paramName, defaultValue);
-	if (vf.size() != paramCount) {
+	const std::vector<std::string> vs = prop.GetStringVector(paramName, defaultValue);
+	if (vs.size() != paramCount) {
 		std::stringstream ss;
 		ss << "Syntax error in " << paramName << " (required " << paramCount << " parameters)";
 		throw std::runtime_error(ss.str());
 	}
 
-	return vf;
+	return vs;
+}
+
+std::vector<int> Scene::GetIntParameters(const Properties &prop, const std::string &paramName,
+		const u_int paramCount, const std::string &defaultValue) {
+	const std::vector<int> vi = prop.GetIntVector(paramName, defaultValue);
+	if (vi.size() != paramCount) {
+		std::stringstream ss;
+		ss << "Syntax error in " << paramName << " (required " << paramCount << " parameters)";
+		throw std::runtime_error(ss.str());
+	}
+
+	return vi;
 }
 
 std::vector<float> Scene::GetFloatParameters(const Properties &prop, const std::string &paramName,
@@ -367,7 +379,7 @@ void Scene::UpdateMaterial(const std::string &name, const Properties &props) {
 
 			if (objectMaterials[i]->IsLightSource()) {
 				for (u_int j = 0; j < mesh->GetTotalTriangleCount(); ++j) {
-					TriangleLight *tl = new TriangleLight(objectMaterials[i], mesh, j);
+					TriangleLight *tl = new TriangleLight(objectMaterials[i], newTriangleLightSources.size(), mesh, j);
 					newTriLights.push_back(tl);
 					newTriangleLightSources.push_back(tl);
 				}
@@ -440,7 +452,7 @@ void Scene::AddObject(const std::string &objName, const Properties &props) {
 		SDL_LOG("The " << objName << " object is a light sources with " << meshObject->GetTotalTriangleCount() << " triangles");
 
 		for (u_int i = 0; i < meshObject->GetTotalTriangleCount(); ++i) {
-			TriangleLight *tl = new TriangleLight(mat, meshObject, i);
+			TriangleLight *tl = new TriangleLight(mat, triangleLights.size(), meshObject, i);
 			triLightDefs.push_back(tl);
 			triangleLights.push_back(tl);
 		}
@@ -521,17 +533,18 @@ void Scene::AddInfiniteLight(const std::string &propsString) {
 
 void Scene::AddInfiniteLight(const Properties &props) {
 	const std::vector<std::string> ilParams = props.GetStringVector("scene.infinitelight.file", "");
+
 	if (ilParams.size() > 0) {
 		const float gamma = props.GetFloat("scene.infinitelight.gamma", 2.2f);
-		ImageMapInstance *imgMap = imgMapCache.GetImageMapInstance(ilParams.at(0), gamma);
-
+		ImageMap *imgMap = imgMapCache.GetImageMap(ilParams.at(0), gamma);
 		InfiniteLight *il = new InfiniteLight(imgMap);
 
 		std::vector<float> vf = GetFloatParameters(props, "scene.infinitelight.gain", 3, "1.0 1.0 1.0");
 		il->SetGain(Spectrum(vf.at(0), vf.at(1), vf.at(2)));
 
 		vf = GetFloatParameters(props, "scene.infinitelight.shift", 2, "0.0 0.0");
-		il->SetShift(vf.at(0), vf.at(1));
+		il->GetUVMapping()->uDelta = vf.at(0);
+		il->GetUVMapping()->vDelta = vf.at(1);
 		il->Preprocess();
 
 		envLight = il;
@@ -626,6 +639,28 @@ void Scene::RemoveUnusedTextures() {
 
 //------------------------------------------------------------------------------
 
+TextureMapping *Scene::CreateTextureMapping(const std::string &prefixName, const Properties &props) {
+	const std::string mapType = GetStringParameters(props, prefixName + ".type", 1, "uvmapping").at(0);
+
+	if (mapType == "uvmapping") {
+		const std::vector<float> uvScale = GetFloatParameters(props, prefixName + ".uvscale", 2, "1.0 1.0");
+		const std::vector<float> uvDelta = GetFloatParameters(props, prefixName + ".uvdelta", 2, "0.0 0.0");
+
+		return new UVMapping(uvScale.at(0), uvScale.at(1), uvDelta.at(0), uvDelta.at(1));
+	} else if (mapType == "globalmapping3d") {
+		const std::vector<float> vf = GetFloatParameters(props, prefixName + ".transformation", 16, "1.0 0.0 0.0 0.0  0.0 1.0 0.0 0.0  0.0 0.0 1.0 0.0  0.0 0.0 0.0 1.0");
+		const Matrix4x4 mat(
+				vf.at(0), vf.at(4), vf.at(8), vf.at(12),
+				vf.at(1), vf.at(5), vf.at(9), vf.at(13),
+				vf.at(2), vf.at(6), vf.at(10), vf.at(14),
+				vf.at(3), vf.at(7), vf.at(11), vf.at(15));
+		const Transform trans(mat);
+
+		return new GlobalMapping3D(trans);
+	} else
+		throw std::runtime_error("Unknown texture coordinate mapping type: " + mapType);
+}
+
 Texture *Scene::CreateTexture(const std::string &texName, const Properties &props) {
 	const std::string propName = "scene.textures." + texName;
 	const std::string texType = GetStringParameters(props, propName + ".type", 1, "imagemap").at(0);
@@ -637,12 +672,9 @@ Texture *Scene::CreateTexture(const std::string &texName, const Properties &prop
 
 		const std::vector<float> gamma = GetFloatParameters(props, propName + ".gamma", 1, "2.2");
 		const std::vector<float> gain = GetFloatParameters(props, propName + ".gain", 1, "1.0");
-		const std::vector<float> uvScale = GetFloatParameters(props, propName + ".uvscale", 2, "1.0 1.0");
-		const std::vector<float> uvDelta = GetFloatParameters(props, propName + ".uvdelta", 2, "0.0 0.0");
 
-		ImageMapInstance *imi = imgMapCache.GetImageMapInstance(vname.at(0), gamma.at(0), gain.at(0),
-				uvScale.at(0), uvScale.at(1), uvDelta.at(0), uvDelta.at(1));
-		return new ImageMapTexture(imi);
+		ImageMap *im = imgMapCache.GetImageMap(vname.at(0), gamma.at(0));
+		return new ImageMapTexture(im, CreateTextureMapping(propName + ".mapping", props), gain.at(0));
 	} else if (texType == "constfloat1") {
 		const std::vector<float> v = GetFloatParameters(props, propName + ".value", 1, "1.0");
 		return new ConstFloatTexture(v.at(0));
@@ -666,6 +698,41 @@ Texture *Scene::CreateTexture(const std::string &texName, const Properties &prop
 		const std::string texName = GetStringParameters(props, propName + ".texture", 1, "tex").at(0);
 		const Texture *tex = GetTexture(texName);
 		return new FresnelApproxKTexture(tex);
+	} else if (texType == "checkerboard2d") {
+		const std::string tex1Name = GetStringParameters(props, propName + ".texture1", 1, "tex1").at(0);
+		const Texture *tex1 = GetTexture(tex1Name);
+		const std::string tex2Name = GetStringParameters(props, propName + ".texture2", 1, "tex2").at(0);
+		const Texture *tex2 = GetTexture(tex2Name);
+
+		return new CheckerBoard2DTexture(CreateTextureMapping(propName + ".mapping", props), tex1, tex2);
+	} else if (texType == "checkerboard3d") {
+		const std::string tex1Name = GetStringParameters(props, propName + ".texture1", 1, "tex1").at(0);
+		const Texture *tex1 = GetTexture(tex1Name);
+		const std::string tex2Name = GetStringParameters(props, propName + ".texture2", 1, "tex2").at(0);
+		const Texture *tex2 = GetTexture(tex2Name);
+
+		return new CheckerBoard3DTexture(CreateTextureMapping(propName + ".mapping", props), tex1, tex2);
+	} else if (texType == "mix") {
+		const std::string amtName = GetStringParameters(props, propName + ".amount", 1, "amount").at(0);
+		const Texture *amtTex = GetTexture(amtName);
+		const std::string tex1Name = GetStringParameters(props, propName + ".texture1", 1, "tex1").at(0);
+		const Texture *tex1 = GetTexture(tex1Name);
+		const std::string tex2Name = GetStringParameters(props, propName + ".texture2", 1, "tex2").at(0);
+		const Texture *tex2 = GetTexture(tex2Name);
+
+		return new MixTexture(amtTex, tex1, tex2);
+	} else if (texType == "fbm") {
+		const int octaves = GetIntParameters(props, propName + ".octaves", 1, "8").at(0);
+		const float omega = GetFloatParameters(props, propName + ".roughness", 1, "0.5").at(0);
+
+		return new FBMTexture(CreateTextureMapping(propName + ".mapping", props), octaves, omega);
+	} else if (texType == "marble") {
+		const int octaves = GetIntParameters(props, propName + ".octaves", 1, "8").at(0);
+		const float omega = GetFloatParameters(props, propName + ".roughness", 1, "0.5").at(0);
+		const float scale = GetFloatParameters(props, propName + ".scale", 1, "1.0").at(0);
+		const float variation = GetFloatParameters(props, propName + ".variation", 1, "0.2").at(0);
+
+		return new MarbleTexture(CreateTextureMapping(propName + ".mapping", props), octaves, omega, scale, variation);
 	} else
 		throw std::runtime_error("Unknown texture type: " + texType);
 }
@@ -717,10 +784,10 @@ Material *Scene::CreateMaterial(const std::string &matName, const Properties &pr
 	Texture *emissionTex = props.IsDefined(propName + ".emission") ? 
 		GetTexture(props.GetString(propName + ".emission", "0.0 0.0 0.0")) : NULL;
 	// Required to remove light source while editing the scene
-	if (emissionTex && ((emissionTex->GetType() == CONST_FLOAT) ||
-			(emissionTex->GetType() == CONST_FLOAT3) ||
-			(emissionTex->GetType() == CONST_FLOAT4)) &&
-			emissionTex->GetColorValue(UV()).Black())
+	if (emissionTex && (
+			((emissionTex->GetType() == CONST_FLOAT) && (((ConstFloatTexture *)emissionTex)->GetValue() == 0.f)) ||
+			((emissionTex->GetType() == CONST_FLOAT3) && (((ConstFloat3Texture *)emissionTex)->GetColor().Black())) ||
+			((emissionTex->GetType() == CONST_FLOAT4) && (((ConstFloat4Texture *)emissionTex)->GetColor().Black()))))
 		emissionTex = NULL;
 
 	Texture *bumpTex = props.IsDefined(propName + ".bumptex") ? 
@@ -904,8 +971,12 @@ bool Scene::Intersect(IntersectionDevice *device, const bool fromLight,
 
 			*connectionThroughput *= t;
 
-			// It is a shadow transparent material, continue to trace the ray
+			// It is a transparent material, continue to trace the ray
 			ray->mint = rayHit->t + MachineEpsilon::E(rayHit->t);
+
+			// A safety check
+			if (ray->mint >= ray->maxt)
+				return false;
 		}
 	}
 }

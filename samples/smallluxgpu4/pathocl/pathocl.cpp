@@ -137,7 +137,7 @@ void PathOCLRenderEngine::StartLockLess() {
 	//--------------------------------------------------------------------------
 
 	taskCount = RoundUpPow2(cfg.GetInt("opencl.task.count", 65536));
-	SLG_LOG("[PathOCLRenderThread] OpenCL task count: " << taskCount);
+	SLG_LOG("[PathOCLRenderEngine] OpenCL task count: " << taskCount);
 
 	if (cfg.IsDefined("opencl.memory.maxpagesize"))
 		maxMemPageSize = cfg.GetSize("opencl.memory.maxpagesize", 512 * 1024 * 1024);
@@ -147,7 +147,7 @@ void PathOCLRenderEngine::StartLockLess() {
 		for (u_int i = 1; i < intersectionDevices.size(); ++i)
 			maxMemPageSize = Min(maxMemPageSize, ((OpenCLIntersectionDevice *)(intersectionDevices[i]))->GetDeviceDesc()->GetMaxMemoryAllocSize());
 	}
-	SLG_LOG("[PathOCLRenderThread] OpenCL max. page memory size: " << maxMemPageSize / 1024 << "Kbytes");
+	SLG_LOG("[PathOCLRenderEngine] OpenCL max. page memory size: " << maxMemPageSize / 1024 << "Kbytes");
 
 	maxPathDepth = cfg.GetInt("path.maxdepth", 5);
 	rrDepth = cfg.GetInt("path.russianroulette.depth", 3);
@@ -235,8 +235,7 @@ void PathOCLRenderEngine::StartLockLess() {
 	for (size_t i = 0; i < renderThreadCount; ++i) {
 		if (!renderThreads[i]) {
 			renderThreads[i] = CreateOCLThread(i,
-					(OpenCLIntersectionDevice *)(intersectionDevices[i]),
-					this);
+					(OpenCLIntersectionDevice *)(intersectionDevices[i]));
 		}
 	}
 
@@ -285,7 +284,9 @@ void PathOCLRenderEngine::UpdateFilmLockLess() {
 			float count = 0.f;
 			for (size_t i = 0; i < renderThreads.size(); ++i) {
 				if (renderThreads[i]->frameBuffer) {
-					radiance += renderThreads[i]->frameBuffer[pGPU].c;
+					radiance.r += renderThreads[i]->frameBuffer[pGPU].c.r;
+					radiance.g += renderThreads[i]->frameBuffer[pGPU].c.g;
+					radiance.b += renderThreads[i]->frameBuffer[pGPU].c.b;
 					count += renderThreads[i]->frameBuffer[pGPU].count;
 				}
 

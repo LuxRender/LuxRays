@@ -23,7 +23,9 @@
 
 typedef enum {
 	CONST_FLOAT, CONST_FLOAT3, CONST_FLOAT4, IMAGEMAP, SCALE_TEX, FRESNEL_APPROX_N,
-	FRESNEL_APPROX_K
+	FRESNEL_APPROX_K, MIX_TEX, FBM_TEX, MARBLE,
+	// Procedural textures
+	CHECKERBOARD2D, CHECKERBOARD3D
 } TextureType;
 
 typedef struct {
@@ -45,11 +47,11 @@ typedef struct {
 } ImageMap;
 
 typedef struct {
-	float gain, uScale, vScale, uDelta, vDelta;
-	float Du, Dv;
+	TextureMapping mapping;
+	float gain, Du, Dv;
 
 	unsigned int imageMapIndex;
-} ImageMapInstanceParam;
+} ImageMapTexParam;
 
 typedef struct {
 	unsigned int tex1Index, tex2Index;
@@ -64,15 +66,46 @@ typedef struct {
 } FresnelApproxKTexParam;
 
 typedef struct {
+	TextureMapping mapping;
+	unsigned int tex1Index, tex2Index;
+} CheckerBoard2DTexParam;
+
+typedef struct {
+	TextureMapping mapping;
+	unsigned int tex1Index, tex2Index;
+} CheckerBoard3DTexParam;
+
+typedef struct {
+	unsigned int amountTexIndex, tex1Index, tex2Index;
+} MixTexParam;
+
+typedef struct {
+	TextureMapping mapping;
+	int octaves;
+	float omega;
+} FBMTexParam;
+
+typedef struct {
+	TextureMapping mapping;
+	int octaves;
+	float omega, scale, variation;
+} MarbleTexParam;
+
+typedef struct {
 	TextureType type;
 	union {
 		ConstFloatParam constFloat;
 		ConstFloat3Param constFloat3;
 		ConstFloat4Param constFloat4;
-		ImageMapInstanceParam imageMapInstance;
+		ImageMapTexParam imageMapTex;
 		ScaleTexParam scaleTex;
 		FresnelApproxNTexParam fresnelApproxN;
 		FresnelApproxKTexParam fresnelApproxK;
+		CheckerBoard2DTexParam checkerBoard2D;
+		CheckerBoard3DTexParam checkerBoard3D;
+		MixTexParam mixTex;
+		FBMTexParam fbm;
+		MarbleTexParam marble;
 	};
 } Texture;
 
@@ -115,4 +148,3 @@ typedef struct {
 
 #define TEXTURES_PARAM_DECL , __global Texture *texs IMAGEMAPS_PARAM_DECL
 #define TEXTURES_PARAM , texs IMAGEMAPS_PARAM
-

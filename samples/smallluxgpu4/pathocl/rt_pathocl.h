@@ -38,7 +38,7 @@ class RTPathOCLRenderThread : public PathOCLRenderThread {
 	friend class RTPathOCLRenderEngine;
 public:
 	RTPathOCLRenderThread(const u_int index, OpenCLIntersectionDevice *device,
-			PathOCLRenderEngine *re, boost::barrier *frameBarrier);
+			PathOCLRenderEngine *re);
 	~RTPathOCLRenderThread();
 
 	void Interrupt();
@@ -46,22 +46,22 @@ public:
 	void BeginEdit();
 	void EndEdit(const EditActionList &editActions);
 	void SetAssignedTaskCount(u_int taskCount);
-	u_int GetAssignedTaskCount() const { return m_assignedTaskCount; };
-	double GetFrameTime() const { return m_frameTime; };
+	u_int GetAssignedTaskCount() const { return assignedTaskCount; };
+	double GetFrameTime() const { return frameTime; };
 
 private:
 	void UpdateOclBuffers();
 	void RenderThreadImpl();
 
-	void balance_lock()   { m_balanceMutex.lock(); };
-	void balance_unlock() { m_balanceMutex.unlock(); };
+	void balance_lock()   { balanceMutex.lock(); };
+	void balance_unlock() { balanceMutex.unlock(); };
 
-	boost::mutex m_editMutex;
-	boost::mutex m_balanceMutex;
-	boost::barrier *m_frameBarrier;
-	EditActionList m_updateActions;
-	volatile double m_frameTime;
-	volatile u_int m_assignedTaskCount;
+	boost::mutex editMutex;
+	boost::mutex balanceMutex;
+	boost::barrier *frameBarrier;
+	EditActionList updateActions;
+	volatile double frameTime;
+	volatile u_int assignedTaskCount;
 };
 
 //------------------------------------------------------------------------------
