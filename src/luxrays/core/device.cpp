@@ -134,16 +134,7 @@ void Device::Stop() {
 //------------------------------------------------------------------------------
 
 void NativeThreadDeviceDescription::AddDeviceDescs(std::vector<DeviceDescription *> &descriptions) {
-	unsigned int count = boost::thread::hardware_concurrency();
-
-	// Build the descriptions
-	char buf[64];
-	for (size_t i = 0; i < count; ++i) {
-		sprintf(buf, "NativeThread-%03d", (int)i);
-		std::string deviceName = std::string(buf);
-
-		descriptions.push_back(new NativeThreadDeviceDescription(deviceName, i));
-	}
+	descriptions.push_back(new NativeThreadDeviceDescription("NativeThread"));
 }
 
 //------------------------------------------------------------------------------
@@ -260,8 +251,8 @@ cl::Context &OpenCLDeviceDescription::GetOCLContext() const {
 
 IntersectionDevice::IntersectionDevice(const Context *context,
 	const DeviceType type, const size_t index) :
-	Device(context, type, index), dataSet(NULL), stackSize(24),
-	dataParallelSupport(true) {
+	Device(context, type, index), dataSet(NULL), queueCount(1), bufferCount(3),
+	stackSize(24), dataParallelSupport(true) {
 }
 
 IntersectionDevice::~IntersectionDevice() {
@@ -284,6 +275,13 @@ void IntersectionDevice::Start() {
 	statsTotalDataParallelRayCount = 0.0;
 	statsDeviceIdleTime = 0.0;
 	statsDeviceTotalTime = 0.0;
+}
+
+void IntersectionDevice::SetQueueCount(const u_int count) {
+	assert (!started);
+	assert (count >= 1);
+
+	queueCount = count;
 }
 
 }

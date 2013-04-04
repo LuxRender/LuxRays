@@ -21,11 +21,152 @@
 
 #if !defined(LUXRAYS_DISABLE_OPENCL)
 
+#include <boost/foreach.hpp>
+
 #include "luxrays/core/oclintersectiondevice.h"
 #include "luxrays/core/context.h"
 #include "luxrays/utils/ocl.h"
+#include "luxrays/utils/atomic.h"
 
 using namespace luxrays;
+
+//------------------------------------------------------------------------------
+// OpenCL Intersection Queue Element
+//------------------------------------------------------------------------------
+
+OpenCLIntersectionDevice::OpenCLDeviceQueue::OpenCLDeviceQueueElem::OpenCLDeviceQueueElem(
+	OpenCLIntersectionDevice *dev, cl::CommandQueue *q, const u_int index) :
+	device(dev), oclQueue(q), kernelIndex(index) {
+	cl::Context &oclContext = device->deviceDesc->GetOCLContext();
+
+	// Allocate OpenCL buffers
+	rayBuff = new cl::Buffer(oclContext, CL_MEM_READ_ONLY,
+		sizeof(Ray) * RayBufferSize);
+	device->AllocMemory(rayBuff->getInfo<CL_MEM_SIZE>());
+
+	hitBuff = new cl::Buffer(oclContext, CL_MEM_WRITE_ONLY,
+		sizeof(RayHit) * RayBufferSize);
+	device->AllocMemory(hitBuff->getInfo<CL_MEM_SIZE>());
+
+	event = new cl::Event();
+
+	pendingRayBuffer = NULL;
+}
+
+OpenCLIntersectionDevice::OpenCLDeviceQueue::OpenCLDeviceQueueElem::~OpenCLDeviceQueueElem() {
+	delete event;
+	device->FreeMemory(rayBuff->getInfo<CL_MEM_SIZE>());
+	delete rayBuff;
+	device->FreeMemory(hitBuff->getInfo<CL_MEM_SIZE>());
+	delete hitBuff;
+}
+
+void OpenCLIntersectionDevice::OpenCLDeviceQueue::OpenCLDeviceQueueElem::PushRayBuffer(RayBuffer *rayBuffer) {
+	// A safety check
+	if (pendingRayBuffer)
+		throw std::runtime_error("Double push in OpenCLIntersectionDevice::OpenCLDeviceQueue::OpenCLDeviceQueueElem::PushRayBuffer()");
+
+	// Enqueue the upload of the rays to the device
+	const size_t rayCount = rayBuffer->GetRayCount();
+	oclQueue->enqueueWriteBuffer(*rayBuff, CL_FALSE, 0,
+			sizeof(Ray) * rayCount, rayBuffer->GetRayBuffer());
+
+	// Enqueue the intersection kernel
+	device->kernels->EnqueueRayBuffer(*oclQueue, kernelIndex, *rayBuff, *hitBuff, rayCount, NULL, NULL);
+
+	// Enqueue the download of the results
+	oclQueue->enqueueReadBuffer(*hitBuff, CL_FALSE, 0,
+			sizeof(RayHit) * rayBuffer->GetRayCount(),
+			rayBuffer->GetHitBuffer(), NULL, event);
+
+	pendingRayBuffer = rayBuffer;
+}
+
+RayBuffer *OpenCLIntersectionDevice::OpenCLDeviceQueue::OpenCLDeviceQueueElem::PopRayBuffer() {
+	// A safety check
+	if (!pendingRayBuffer)
+		throw std::runtime_error("Pop without a push in OpenCLIntersectionDevice::OpenCLDeviceQueue::OpenCLDeviceQueueElem::PopRayBuffer()");
+
+	event->wait();	
+	RayBuffer *result = pendingRayBuffer;
+	pendingRayBuffer = NULL;
+
+	return result;
+}
+
+//------------------------------------------------------------------------------
+// OpenCL Intersection Queue
+//------------------------------------------------------------------------------
+
+OpenCLIntersectionDevice::OpenCLDeviceQueue::OpenCLDeviceQueue(
+	OpenCLIntersectionDevice *dev, const u_int kernelIndexOffset) : device(dev) {
+	cl::Context &oclContext = device->deviceDesc->GetOCLContext();
+
+	// Create the OpenCL queue
+	oclQueue = new cl::CommandQueue(oclContext, device->deviceDesc->GetOCLDevice());
+
+	// Allocated all associated buffers if using data parallel mode
+	if (device->dataParallelSupport) {
+		for (u_int i = 0; i < device->bufferCount; ++i)
+			freeElem.push_back(new OpenCLDeviceQueueElem(device, oclQueue, kernelIndexOffset + i));
+	} else {
+		// Only need one buffer
+		freeElem.push_back(new OpenCLDeviceQueueElem(device, oclQueue, kernelIndexOffset));
+	}
+
+	pendingRayBuffers = 0;
+	lastTimeEmptyQueue = WallClockTime();
+
+	statsTotalDataParallelRayCount = 0.0;
+	statsDeviceIdleTime = 0.0;
+}
+
+OpenCLIntersectionDevice::OpenCLDeviceQueue::~OpenCLDeviceQueue() {
+	oclQueue->finish();
+
+	BOOST_FOREACH(OpenCLDeviceQueueElem *elem, freeElem)
+		delete elem;
+	BOOST_FOREACH(OpenCLDeviceQueueElem *elem, busyElem)
+		delete elem;
+
+	delete oclQueue;
+}
+
+void OpenCLIntersectionDevice::OpenCLDeviceQueue::PushRayBuffer(RayBuffer *rayBuffer) {
+	if (freeElem.size() == 0)
+		throw std::runtime_error("Out of free buffers in OpenCLIntersectionDevice::OpenCLDeviceQueue::PushRayBuffer()");
+
+	OpenCLDeviceQueueElem *elem = freeElem.back();
+	freeElem.pop_back();
+
+	elem->PushRayBuffer(rayBuffer);
+
+	busyElem.push_front(elem);
+
+	if (pendingRayBuffers == 0)
+		statsDeviceIdleTime += WallClockTime() - lastTimeEmptyQueue;
+
+	++pendingRayBuffers;
+}
+
+RayBuffer *OpenCLIntersectionDevice::OpenCLDeviceQueue::PopRayBuffer() {
+	if (busyElem.size() == 0)
+		throw std::runtime_error("Double pop in OpenCLIntersectionDevice::OpenCLDeviceQueue::PopRayBuffer()");
+
+	OpenCLDeviceQueueElem *elem = busyElem.back();
+	busyElem.pop_back();
+
+	RayBuffer *rayBuffer = elem->PopRayBuffer();
+	--pendingRayBuffers;
+	statsTotalDataParallelRayCount += rayBuffer->GetRayCount();
+
+	freeElem.push_front(elem);
+
+	if (pendingRayBuffers == 0)
+		lastTimeEmptyQueue = WallClockTime();
+
+	return rayBuffer;
+}
 
 //------------------------------------------------------------------------------
 // OpenCL IntersectionDevice
@@ -37,32 +178,24 @@ OpenCLIntersectionDevice::OpenCLIntersectionDevice(
 		const Context *context,
 		OpenCLDeviceDescription *desc,
 		const size_t index) :
-		HardwareIntersectionDevice(context, desc->type, index),
-		oclQueue(new cl::CommandQueue(desc->GetOCLContext(),
-		desc->GetOCLDevice())), kernel(NULL) {
+		HardwareIntersectionDevice(context, desc->type, index) {
 	stackSize = 24;
 	deviceDesc = desc;
-	deviceName = (desc->GetName() +"Intersect").c_str();
+	deviceName = (desc->GetName() + "Intersect").c_str();
 	reportedPermissionError = false;
 	disableImageStorage = false;
-	intersectionThread = NULL;
 
-	externalRayBufferQueue = NULL;
+	// Check if OpenCL 1.1 is available
+	if (!desc->IsOpenCL_1_1()) {
+		// NVIDIA drivers report OpenCL 1.0 even if they are 1.1 so I just
+		// print a warning instead of throwing an exception
+		LR_LOG(context, "WARNING: OpenCL version 1.1 or better is required. Device " + deviceName + " may not work.");
+	}
 }
 
 OpenCLIntersectionDevice::~OpenCLIntersectionDevice() {
 	if (started)
 		Stop();
-
-	FreeDataSetBuffers();
-
-	delete oclQueue;
-}
-
-void OpenCLIntersectionDevice::SetExternalRayBufferQueue(RayBufferQueue *queue) {
-	assert (!started);
-
-	externalRayBufferQueue = queue;
 }
 
 RayBuffer *OpenCLIntersectionDevice::NewRayBuffer() {
@@ -73,245 +206,123 @@ RayBuffer *OpenCLIntersectionDevice::NewRayBuffer(const size_t size) {
 	return new RayBuffer(RoundUpPow2<size_t>(size));
 }
 
-void OpenCLIntersectionDevice::PushRayBuffer(RayBuffer *rayBuffer) {
-	assert (started);
-	assert (!externalRayBufferQueue);
+size_t OpenCLIntersectionDevice::GetQueueSize() {
+	if (started) {
+		size_t count = 0;
+		BOOST_FOREACH(OpenCLDeviceQueue *oclQueue, oclQueues)
+			count += oclQueue->pendingRayBuffers;
 
-	rayBufferQueue.PushToDo(rayBuffer, 0);
+		return count;
+	} else
+		return 0;
 }
 
-RayBuffer *OpenCLIntersectionDevice::PopRayBuffer() {
+void OpenCLIntersectionDevice::PushRayBuffer(RayBuffer *rayBuffer, const u_int queueIndex) {
 	assert (started);
-	assert (!externalRayBufferQueue);
+	assert (dataParallelSupport);
 
-	return rayBufferQueue.PopDone(0);
+	oclQueues[queueIndex]->PushRayBuffer(rayBuffer);
 }
 
-void OpenCLIntersectionDevice::FreeDataSetBuffers() {
-	// Check if I have to free something from previous DataSet
-	if (dataSet) {
-		FreeMemory(raysBuff->getInfo<CL_MEM_SIZE>());
-		delete raysBuff;
-		raysBuff = NULL;
-		FreeMemory(hitsBuff->getInfo<CL_MEM_SIZE>());
-		delete hitsBuff;
-		hitsBuff = NULL;
-	}
-	delete kernel;
-	kernel = NULL;
+RayBuffer *OpenCLIntersectionDevice::PopRayBuffer(const u_int queueIndex) {
+	assert (started);
+	assert (dataParallelSupport);
+
+	return oclQueues[queueIndex]->PopRayBuffer();
 }
 
 void OpenCLIntersectionDevice::SetDataSet(const DataSet *newDataSet) {
-	FreeDataSetBuffers();
-
 	IntersectionDevice::SetDataSet(newDataSet);
-
-	if (!newDataSet)
-		return;
-
-	cl::Context &oclContext = GetOpenCLContext();
-
-	// Allocate OpenCL buffers
-	LR_LOG(deviceContext, "[OpenCL device::" << deviceName <<
-		"] Ray buffer size: " <<
-		(sizeof(Ray) * RayBufferSize / 1024) << "Kbytes");
-	raysBuff = new cl::Buffer(oclContext, CL_MEM_READ_ONLY,
-		sizeof(Ray) * RayBufferSize);
-	AllocMemory(raysBuff->getInfo<CL_MEM_SIZE>());
-
-	LR_LOG(deviceContext, "[OpenCL device::" << deviceName <<
-		"] Ray hits buffer size: " <<
-		(sizeof(RayHit) * RayBufferSize / 1024) << "Kbytes");
-	hitsBuff = new cl::Buffer(oclContext, CL_MEM_WRITE_ONLY,
-		sizeof(RayHit) * RayBufferSize);
-	AllocMemory(hitsBuff->getInfo<CL_MEM_SIZE>());
-
-	kernel = dataSet->GetAccelerator()->NewOpenCLKernel(this,
-		stackSize, disableImageStorage);
 }
 
 void OpenCLIntersectionDevice::UpdateDataSet() {
-	if (kernel)
-		kernel->UpdateDataSet(dataSet);
+	kernels->UpdateDataSet(dataSet);
 }
 
 void OpenCLIntersectionDevice::Start() {
 	IntersectionDevice::Start();
 
+	oclQueues.clear();
 	if (dataParallelSupport) {
-		// Create the thread for the rendering
-		intersectionThread = new boost::thread(boost::bind(OpenCLIntersectionDevice::IntersectionThread, this));
+		// Compile all required kernels
+		kernels = dataSet->GetAccelerator()->NewOpenCLKernels(this,
+				queueCount * bufferCount, stackSize, disableImageStorage);
 
-		// Set intersectionThread priority
-		bool res = SetThreadRRPriority(intersectionThread);
-		if (res && !reportedPermissionError) {
-			LR_LOG(deviceContext, "[OpenCL device::" << deviceName << "] Failed to set ray intersection thread priority (you probably need root/administrator permission to set thread realtime priority)");
-			reportedPermissionError = true;
+		for (u_int i = 0; i < queueCount; ++i) {
+			// Create the OpenCL queue
+			oclQueues.push_back(new OpenCLDeviceQueue(this, i * bufferCount));
 		}
+	} else {
+		// Compile all required kernels
+		kernels = dataSet->GetAccelerator()->NewOpenCLKernels(this,
+				1, stackSize, disableImageStorage);
+
+		// I need to create at least one queue (for GPU rendering)
+		oclQueues.push_back(new OpenCLDeviceQueue(this, 0));
 	}
 }
 
 void OpenCLIntersectionDevice::Interrupt() {
 	assert (started);
-
-	if (dataParallelSupport)
-		intersectionThread->interrupt();
 }
 
 void OpenCLIntersectionDevice::Stop() {
 	IntersectionDevice::Stop();
 
-	if (dataParallelSupport) {
-		intersectionThread->interrupt();
-		intersectionThread->join();
-		delete intersectionThread;
-		intersectionThread = NULL;
+	BOOST_FOREACH(OpenCLDeviceQueue *queue, oclQueues)
+		delete queue;
+	oclQueues.clear();
 
-		if (!externalRayBufferQueue)
-			rayBufferQueue.Clear();
-	}
+	delete kernels;
+	kernels = NULL;
 }
 
-void OpenCLIntersectionDevice::TraceRayBuffer(RayBuffer *rayBuffer,
-	VECTOR_CLASS<cl::Event> &readEvent, VECTOR_CLASS<cl::Event> &traceEvent,
-	cl::Event *event) {
-	// Upload the rays to the GPU
-	oclQueue->enqueueWriteBuffer(*raysBuff, CL_FALSE, 0,
-		sizeof(Ray) * rayBuffer->GetRayCount(),
-		rayBuffer->GetRayBuffer(), NULL, &(readEvent[0]));
+//------------------------------------------------------------------------------
+// Statistics
+//------------------------------------------------------------------------------
 
-	EnqueueTraceRayBuffer(*raysBuff, *hitsBuff, rayBuffer->GetSize(),
-		&readEvent, &(traceEvent[0]));
+double OpenCLIntersectionDevice::GetLoad() const {
+	UpdateCounters();
 
-	// Download the results
-	oclQueue->enqueueReadBuffer(*hitsBuff, CL_FALSE, 0,
-		sizeof(RayHit) * rayBuffer->GetRayCount(),
-		rayBuffer->GetHitBuffer(), &traceEvent, event);
+	return HardwareIntersectionDevice::GetLoad();
 }
 
-void OpenCLIntersectionDevice::EnqueueTraceRayBuffer(cl::Buffer &rBuff,
-	cl::Buffer &hBuff, const unsigned int rayCount,
-	const VECTOR_CLASS<cl::Event> *events, cl::Event *event) {
-	if (kernel) {
-		kernel->EnqueueRayBuffer(rBuff, hBuff, rayCount, events, event);
-		statsTotalDataParallelRayCount += rayCount;
+void OpenCLIntersectionDevice::UpdateCounters() const {
+	double totalCount = 0.0;
+	double totalIdle = 0.0;
+	BOOST_FOREACH(OpenCLDeviceQueue *oclQueue, oclQueues) {
+		totalCount += oclQueue->statsTotalDataParallelRayCount;
+		totalIdle += oclQueue->statsDeviceIdleTime;
 	}
+
+	statsDeviceIdleTime = totalIdle / oclQueues.size();
+	statsDeviceTotalTime = WallClockTime() - statsStartTime;
+	statsTotalDataParallelRayCount = totalCount;
 }
 
-void OpenCLIntersectionDevice::IntersectionThread(OpenCLIntersectionDevice *renderDevice) {
-	LR_LOG(renderDevice->deviceContext, "[OpenCL device::" << renderDevice->deviceName << "] Rendering thread started");
+double OpenCLIntersectionDevice::GetTotalRaysCount() const {
+	UpdateCounters();
 
-	try {
-		RayBufferQueue *queue = renderDevice->externalRayBufferQueue ?
-			renderDevice->externalRayBufferQueue : &(renderDevice->rayBufferQueue);
+	return HardwareIntersectionDevice::GetTotalRaysCount();
+}
 
-		RayBuffer *rayBuffer0, *rayBuffer1, *rayBuffer2;
-		const double startTime = WallClockTime();
-		while (!boost::this_thread::interruption_requested()) {
-			const double t1 = WallClockTime();
-			queue->Pop3xToDo(&rayBuffer0, &rayBuffer1, &rayBuffer2);
-			renderDevice->statsDeviceIdleTime += WallClockTime() - t1;
-			const unsigned int count = (rayBuffer0 ? 1 : 0) + (rayBuffer1 ? 1 : 0) + (rayBuffer2 ? 1 : 0);
+double OpenCLIntersectionDevice::GetTotalPerformance() const {
+	UpdateCounters();
 
-			switch(count) {
-				case 1: {
-					// Only one ray buffer to trace available
-					VECTOR_CLASS<cl::Event> readEvent0(1);
-					VECTOR_CLASS<cl::Event> traceEvent0(1);
-					cl::Event event0;
-					renderDevice->TraceRayBuffer(rayBuffer0,
-						readEvent0, traceEvent0,
-						&event0);
+	return HardwareIntersectionDevice::GetTotalPerformance();
+}
 
-					event0.wait();
-					queue->PushDone(rayBuffer0);
+double OpenCLIntersectionDevice::GetDataParallelPerformance() const {
+	UpdateCounters();
 
-					renderDevice->statsDeviceTotalTime = WallClockTime() - startTime;
-					break;
-				}
-				case 2: {
-					// At least 2 ray buffers to trace
+	return HardwareIntersectionDevice::GetDataParallelPerformance();
+}
 
-					// Trace 0 ray buffer
-					VECTOR_CLASS<cl::Event> readEvent0(1);
-					VECTOR_CLASS<cl::Event> traceEvent0(1);
-					cl::Event event0;
-					renderDevice->TraceRayBuffer(rayBuffer0,
-						readEvent0, traceEvent0,
-						&event0);
+void OpenCLIntersectionDevice::ResetPerformaceStats() {
+	HardwareIntersectionDevice::ResetPerformaceStats();
 
-					// Trace 1 ray buffer
-					VECTOR_CLASS<cl::Event> readEvent1(1);
-					VECTOR_CLASS<cl::Event> traceEvent1(1);
-					cl::Event event1;
-					renderDevice->TraceRayBuffer(rayBuffer1,
-						readEvent1, traceEvent1,
-						&event1);
-
-					// Pop 0 ray buffer
-					event0.wait();
-					queue->PushDone(rayBuffer0);
-
-					// Pop 1 ray buffer
-					event1.wait();
-					queue->PushDone(rayBuffer1);
-
-					renderDevice->statsDeviceTotalTime = WallClockTime() - startTime;
-					break;
-				}
-				case 3: {
-					// At least 3 ray buffers to trace
-
-					// Trace 0 ray buffer
-					VECTOR_CLASS<cl::Event> readEvent0(1);
-					VECTOR_CLASS<cl::Event> traceEvent0(1);
-					cl::Event event0;
-					renderDevice->TraceRayBuffer(rayBuffer0,
-						readEvent0, traceEvent0,
-						&event0);
-
-					// Trace 1 ray buffer
-					VECTOR_CLASS<cl::Event> readEvent1(1);
-					VECTOR_CLASS<cl::Event> traceEvent1(1);
-					cl::Event event1;
-					renderDevice->TraceRayBuffer(rayBuffer1,
-						readEvent1, traceEvent1,
-						&event1);
-
-					// Trace 2 ray buffer
-					VECTOR_CLASS<cl::Event> readEvent2(1);
-					VECTOR_CLASS<cl::Event> traceEvent2(1);
-					cl::Event event2;
-					renderDevice->TraceRayBuffer(rayBuffer2,
-						readEvent2, traceEvent2,
-						&event2);
-
-					// Pop 0 ray buffer
-					event0.wait();
-					queue->PushDone(rayBuffer0);
-
-					// Pop 1 ray buffer
-					event1.wait();
-					queue->PushDone(rayBuffer1);
-
-					// Pop 2 ray buffer
-					event2.wait();
-					queue->PushDone(rayBuffer2);
-
-					renderDevice->statsDeviceTotalTime = WallClockTime() - startTime;
-					break;
-				}
-				default:
-					assert (false);
-			}
-		}
-
-		LR_LOG(renderDevice->deviceContext, "[OpenCL device::" << renderDevice->deviceName << "] Rendering thread halted");
-	} catch (boost::thread_interrupted) {
-		LR_LOG(renderDevice->deviceContext, "[OpenCL device::" << renderDevice->deviceName << "] Rendering thread halted");
-	} catch (cl::Error err) {
-		LR_LOG(renderDevice->deviceContext, "[OpenCL device::" << renderDevice->deviceName << "] Rendering thread ERROR: " << err.what() << "(" << luxrays::oclErrorString(err.err()) << ")");
-	}
+	BOOST_FOREACH(OpenCLDeviceQueue *oclQueue, oclQueues)
+			oclQueue->statsTotalDataParallelRayCount = 0.0;
 }
 
 #endif

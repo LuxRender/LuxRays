@@ -46,7 +46,6 @@ class DataSet;
 class IntersectionDevice;
 class Mesh;
 class Normal;
-class PixelDevice;
 class Point;
 class Ray;
 class RayBuffer;
@@ -58,8 +57,7 @@ class Triangle;
 class TriangleMesh;
 class UV;
 class Vector;
-class VirtualM2MHardwareIntersectionDevice;
-class VirtualM2OHardwareIntersectionDevice;
+class VirtualIntersectionDevice;
 }
 
 #endif	/* _LUXRAYS_H */
