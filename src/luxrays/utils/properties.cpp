@@ -37,6 +37,12 @@
 using namespace luxrays;
 using namespace std;
 
+namespace luxrays {
+
+//------------------------------------------------------------------------------
+// Specialize templates
+//------------------------------------------------------------------------------
+		
 template<> PropertyValues MakePropertyValues<UV>(const UV &v) {
 	PropertyValues values(3);
 	values[0] = v.u;
@@ -92,6 +98,8 @@ template<> PropertyValues MakePropertyValues<Matrix4x4>(const Matrix4x4 &m) {
 
 	return values;
 }
+	
+} // end namespace luxrays
 
 //------------------------------------------------------------------------------
 // Property class
