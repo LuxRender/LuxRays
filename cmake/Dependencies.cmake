@@ -31,23 +31,21 @@ find_package(Threads REQUIRED)
 find_package(OpenImageIO REQUIRED)
 include_directories(SYSTEM ${OPENIMAGEIO_INCLUDE_DIR})
 find_package(OpenEXR REQUIRED)
-include_directories(SYSTEM ${OPENEXR_INCLUDE_DIRS})
-find_package(TIFF REQUIRED)
-include_directories(SYSTEM ${TIFF_INCLUDE_DIR})
-find_package(JPEG REQUIRED)
-include_directories(SYSTEM ${JPEG_INCLUDE_DIR})
-find_package(PNG REQUIRED)
-include_directories(SYSTEM ${PNG_PNG_INCLUDE_DIR})
 
 if(NOT APPLE)
+    # Apple has these available hardcoded and matched in macos repo, see Config_OSX.cmake
+
+    include_directories(SYSTEM ${OPENEXR_INCLUDE_DIRS})
+    find_package(TIFF REQUIRED)
+    include_directories(SYSTEM ${TIFF_INCLUDE_DIR})
+    find_package(JPEG REQUIRED)
+    include_directories(SYSTEM ${JPEG_INCLUDE_DIR})
+    find_package(PNG REQUIRED)
+    include_directories(SYSTEM ${PNG_PNG_INCLUDE_DIR})
 	# Find Python Libraries
 	find_package(PythonLibs)
-else(not APPLE)
-	# use Blender python libs for static compiling !
-	SET(PYTHON_LIBRARIES ${OSX_DEPENDENCY_ROOT}/lib/BF_pythonlibs/py33_uni_intel/libbf_python_ext.a ${OSX_DEPENDENCY_ROOT}/lib/BF_pythonlibs/py33_uni_intel/libbf_python.a)
-	SET(PYTHON_INCLUDE_DIRS ${OSX_DEPENDENCY_ROOT}/include/Python3.3m)
-	SET(PYTHONLIBS_FOUND ON)
 endif()
+
 include_directories (${PYTHON_INCLUDE_DIRS})
 
 # Find Boost
