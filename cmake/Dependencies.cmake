@@ -29,15 +29,10 @@ getenv_path(LuxRays_DEPENDENCIES_DIR)
 find_package(Threads REQUIRED)
 
 find_package(OpenImageIO REQUIRED)
-
 find_package(OpenEXR REQUIRED)
-
-find_package(Tiff REQUIRED)
-set(TIFF_LIBRARIES ${TIFF_LIBRARY})
-
-find_package(Jpeg REQUIRED)
-
-find_package(Png REQUIRED)
+find_package(TIFF REQUIRED)
+find_package(JPEG REQUIRED)
+find_package(PNG REQUIRED)
 
 if(NOT APPLE)
 	# Find Python Libraries
