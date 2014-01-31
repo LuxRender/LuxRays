@@ -98,9 +98,10 @@ void WoodTexture_EvaluateFloat(__global Texture *texture, __global HitPoint *hit
 }
 
 void WoodTexture_EvaluateSpectrum(__global Texture *texture, __global HitPoint *hitPoint,
-		float3 texValues[TEXTURE_STACK_SIZE], uint *texValuesSize) {
-		float wood = WoodTexture_Evaluate(texture, hitPoint);
-	texValues[(*texValuesSize)++] = (float3)(wood, wood, wood);
+	float3 texValues[TEXTURE_STACK_SIZE], uint *texValuesSize) {
+    float wood = WoodTexture_Evaluate(texture, hitPoint);
+
+    texValues[(*texValuesSize)++] = (float3)(wood, wood, wood);
 }
 
 void WoodTexture_EvaluateDuDv(__global Texture *texture, __global HitPoint *hitPoint,
