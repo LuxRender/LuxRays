@@ -1,3 +1,5 @@
+#line 2 "materialdefs_funcs_null.cl"
+
 /***************************************************************************
  * Copyright 1998-2013 by authors (see AUTHORS.txt)                        *
  *                                                                         *
@@ -16,29 +18,27 @@
  * limitations under the License.                                          *
  ***************************************************************************/
 
-#ifndef _LUXRAYSEXPORT_DEFS_H
-#define _LUXRAYSEXPORT_DEFS_H
+//------------------------------------------------------------------------------
+// NULL material
+//------------------------------------------------------------------------------
 
-// The following ifdef block is the standard way of creating macros which make exporting 
-// from a DLL simpler. All files within this DLL are compiled with the CPP_API_EXPORTS
-// symbol defined on the command line. this symbol should not be defined on any project
-// that uses this DLL. This way any other project whose source files include this file see
-// CPP_API functions as being imported from a DLL, whereas this DLL sees symbols
-// defined with this macro as being exported.
-#if defined(_WIN32) && defined(LUXRAYS_DLL)
- #ifdef CPP_API_EXPORTS
-  #define CPP_API __declspec(dllexport)
- #else
-  #define CPP_API __declspec(dllimport)
- #endif
-#else
- #define CPP_API
+#if defined (PARAM_ENABLE_MAT_NULL)
+
+float3 NullMaterial_Sample(__global Material *material,
+		__global HitPoint *hitPoint, const float3 fixedDir, float3 *sampledDir,
+		const float u0, const float u1,
+		float *pdfW, float *cosSampledDir, BSDFEvent *event,
+		const BSDFEvent requestedEvent
+		TEXTURES_PARAM_DECL) {
+	if (!(requestedEvent & (SPECULAR | TRANSMIT)))
+		return BLACK;
+
+	*sampledDir = -fixedDir;
+	*cosSampledDir = 1.f;
+
+	*pdfW = 1.f;
+	*event = SPECULAR | TRANSMIT;
+	return WHITE;
+}
+
 #endif
-
-#if defined(__APPLE__)
- #define CPP_EXPORT extern "C"
-#else
- #define CPP_EXPORT extern "C++"
-#endif
-
-#endif	// _LUXRAYSEXPORT_DEFS_H
