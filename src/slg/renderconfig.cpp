@@ -165,7 +165,7 @@ void RenderConfig::Parse(const luxrays::Properties &props) {
 	scene->camera->Update(filmFullWidth, filmFullHeight, subRegion);
 }
 
-void RenderConfig::Delete(const string prefix) {
+void RenderConfig::Delete(const string &prefix) {
 	cfg.DeleteAll(cfg.GetAllNames(prefix));
 }
 
@@ -432,7 +432,7 @@ Film *RenderConfig::AllocFilm(FilmOutputs &filmOutputs) const {
 				film->AddChannel(Film::MATERIAL_ID);
 				filmOutputs.Add(FilmOutputs::MATERIAL_ID, fileName);
 			} else
-				throw runtime_error("Material ID image can be saved only in no HDR formats: " + outputName);
+				throw runtime_error("Material ID image can be saved only in non HDR formats: " + outputName);
 		} else if (type == "DIRECT_DIFFUSE") {
 			if (hdrImage) {
 				film->AddChannel(Film::DIRECT_DIFFUSE);
