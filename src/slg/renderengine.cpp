@@ -474,6 +474,80 @@ void CPUNoTileRenderEngine::UpdateCounters() {
 }
 
 //------------------------------------------------------------------------------
+// Tile
+//------------------------------------------------------------------------------
+
+void TileRepository::Tile::UpdateEvenPassRendering(const Film *film, const u_int tileSize, const Film *tileFilm) {
+	const u_int width = Min(tileSize, film->GetWidth() - xStart);
+	const u_int height = Min(tileSize, film->GetHeight() - yStart);
+
+	for (u_int y = 0; y < height; ++y) {
+		for (u_int x = 0; x < width; ++x) {
+			// I have to handle light groups
+			Spectrum tilePixel;
+			for (u_int j = 0; j < tileFilm->channel_RADIANCE_PER_PIXEL_NORMALIZEDs.size(); ++j) {
+				const float *vals = tileFilm->channel_RADIANCE_PER_PIXEL_NORMALIZEDs[j]->GetPixel(x, y);
+				if (vals[3] == 0.f)
+					continue;
+
+				const float invFact = 1.f / vals[3];
+				for (u_int k = 0; k < COLOR_SAMPLES; ++k)
+					tilePixel.c[k] += vals[k] * invFact;
+			}
+
+			// Add this pass to the previous even passes
+			evenPassRendering[x + y * tileSize] += tilePixel;
+		}
+	}
+}
+
+float TileRepository::Tile::CheckConvergence(const Film *film, const u_int tileSize) const {
+	float totalError = 0.f;
+
+	// Compare the pixels result only of even passes with the one result
+	// of all passes
+	const u_int width = Min(tileSize, film->GetWidth() - xStart);
+	const u_int height = Min(tileSize, film->GetHeight() - yStart);
+	const float invEvenWeight = 1.f / ((pass + 1) / 2);
+	for (u_int y = 0; y < height; ++y) {
+		for (u_int x = 0; x < width; ++x) {
+			Spectrum filmPixel;
+			for (u_int j = 0; j < film->channel_RADIANCE_PER_PIXEL_NORMALIZEDs.size(); ++j) {
+				const float *vals = film->channel_RADIANCE_PER_PIXEL_NORMALIZEDs[j]->GetPixel(
+					xStart + x, yStart + y);
+				if (vals[3] <= 0.f)
+					continue;
+
+				for (u_int k = 0; k < COLOR_SAMPLES; ++k)
+					filmPixel.c[k] += vals[k] / vals[3];
+			}
+
+			// Calculate the error by comparing current and reference pixel
+
+			float s = 0.f;
+			for (u_int k = 0; k < COLOR_SAMPLES; ++k)
+				s += filmPixel.c[k];
+			if (s == 0.f)
+				continue;
+
+			const float intensity = sqrtf(fabsf(s));
+
+			float pixelError = 0.f ;
+			for (u_int k = 0; k < COLOR_SAMPLES; ++k)
+				pixelError += fabsf(filmPixel.c[k] - evenPassRendering[x + y * tileSize].c[k] * invEvenWeight);
+			pixelError /= intensity;
+
+			totalError += pixelError;
+		}
+	}
+
+	// Error is divided by tile area to obtain average error
+	totalError /=  tileSize * tileSize;
+
+	return totalError;
+}
+
+//------------------------------------------------------------------------------
 // TileRepository
 //------------------------------------------------------------------------------
 
@@ -573,7 +647,7 @@ void TileRepository::InitTiles(const u_int width, const u_int height) {
 	done = false;
 }
 
-const bool TileRepository::NextTile(const Film *film, Tile **tile, const Film *tileFilm) {
+bool TileRepository::NextTile(const Film *film, Tile **tile, const Film *tileFilm) {
 	boost::unique_lock<boost::mutex> lock(tileMutex);
 
 	if (*tile) {
@@ -588,77 +662,14 @@ const bool TileRepository::NextTile(const Film *film, Tile **tile, const Film *t
 				// Update the tile copy of the rendering with half of the samples. Used
 				// by convergence test
 
-				const u_int width = Min(tileSize, film->GetWidth() - (*tile)->xStart);
-				const u_int height = Min(tileSize, film->GetHeight() - (*tile)->yStart);
-
-				for (u_int y = 0; y < height; ++y) {
-					for (u_int x = 0; x < width; ++x) {
-						// I have to handle light groups
-						Spectrum tilePixel;
-						for (u_int j = 0; j < tileFilm->channel_RADIANCE_PER_PIXEL_NORMALIZEDs.size(); ++j) {
-							const float *vals = tileFilm->channel_RADIANCE_PER_PIXEL_NORMALIZEDs[j]->GetPixel(x, y);
-							if (vals[3] == 0.f)
-								continue;
-
-							const float invFact = 1.f / vals[3];
-							for (u_int k = 0; k < COLOR_SAMPLES; ++k)
-								tilePixel.c[k] += vals[k] * invFact;
-						}
-
-						// Add this pass to the previous even passes
-						(*tile)->evenPassRendering[x + y * tileSize] += tilePixel;
-					}
-				}
+				(*tile)->UpdateEvenPassRendering(film, tileSize, tileFilm);
 			} else {
 				// It is an odd pass
 				//
 				// Run the convergence test
 
-				float totalError = 0.f;
-
-				// Compare the pixels result only of even passes with the one result
-				// of all passes
-				const u_int width = Min(tileSize, film->GetWidth() - (*tile)->xStart);
-				const u_int height = Min(tileSize, film->GetHeight() - (*tile)->yStart);
-				const float invEvenWeight = 1.f / (((*tile)->pass + 1) / 2);
-				for (u_int y = 0; y < height; ++y) {
-					for (u_int x = 0; x < width; ++x) {
-						Spectrum filmPixel;
-						for (u_int j = 0; j < film->channel_RADIANCE_PER_PIXEL_NORMALIZEDs.size(); ++j) {
-							const float *vals = film->channel_RADIANCE_PER_PIXEL_NORMALIZEDs[j]->GetPixel(
-								(*tile)->xStart + x, (*tile)->yStart + y);
-							if (vals[3] <= 0.f)
-								continue;
-
-							for (u_int k = 0; k < COLOR_SAMPLES; ++k)
-								filmPixel.c[k] += vals[k] / vals[3];
-						}
-
-						// Calculate the error by comparing current and reference pixel
-
-						float s = 0.f;
-						for (u_int k = 0; k < COLOR_SAMPLES; ++k)
-							s += filmPixel.c[k];
-						if (s == 0.f)
-							continue;
-
-						const float intensity = sqrtf(fabsf(s));
-
-						float pixelError = 0.f ;
-						for (u_int k = 0; k < COLOR_SAMPLES; ++k)
-							pixelError += fabsf(filmPixel.c[k] - (*tile)->evenPassRendering[x + y * tileSize].c[k] * invEvenWeight);
-						pixelError /= intensity;
-
-						totalError += pixelError;
-					}
-				}
-
-				// Error is divided by tile area to obtain average error
-				totalError /=  tileSize * tileSize;
-
-				// Compare the error of the current tile with the convergence
-				// threshold
-				if (totalError < convergenceTestThreshold)
+				const float error = (*tile)->CheckConvergence(film, tileSize);
+				if (error < convergenceTestThreshold)
 					doneTile = true;
 			}
 

@@ -248,8 +248,14 @@ public:
 		}
 		virtual ~Tile() { delete evenPassRendering; }
 
+		friend class TileRepository;
+
 		u_int xStart, yStart;
 		u_int pass;
+
+	protected:
+		void UpdateEvenPassRendering(const Film *film, const u_int tileSize, const Film *tileFilm);
+		float CheckConvergence(const Film *film, const u_int tileSize) const;
 
 		luxrays::Spectrum *evenPassRendering;
 	};
@@ -268,7 +274,7 @@ public:
 	void GetConvergedTiles(std::deque<Tile *> &tiles);
 
 	void InitTiles(const u_int width, const u_int height);
-	const bool NextTile(const Film *film, Tile **tile, const Film *tileFilm);
+	bool NextTile(const Film *film, Tile **tile, const Film *tileFilm);
 
 	u_int tileSize;
 	u_int totalSamplesPerPixel;
