@@ -54,13 +54,17 @@ void CompiledScene::CompileCamera() {
 	// Camera definition
 	//--------------------------------------------------------------------------
 
-	switch (scene->camera->GetType()) {
+	const Camera *sceneCamera = scene->camera;
+	camera.yon = sceneCamera->clipYon;
+	camera.hither = sceneCamera->clipHither;
+	camera.lensRadius = sceneCamera->lensRadius;
+	camera.focalDistance = sceneCamera->focalDistance;
+	camera.shutterOpen = sceneCamera->shutterOpen;
+	camera.shutterClose = sceneCamera->shutterClose;
+
+	switch (sceneCamera->GetType()) {
 		case Camera::PERSPECTIVE: {
-			const PerspectiveCamera *perspCamera = (PerspectiveCamera *)scene->camera;
-			camera.yon = perspCamera->clipYon;
-			camera.hither = perspCamera->clipHither;
-			camera.lensRadius = perspCamera->lensRadius;
-			camera.focalDistance = perspCamera->focalDistance;
+			const PerspectiveCamera *perspCamera = (PerspectiveCamera *)sceneCamera;
 
 			memcpy(camera.rasterToCamera[0].m.m, perspCamera->GetRasterToCameraMatrix(0).m, 4 * 4 * sizeof(float));
 			memcpy(camera.cameraToWorld[0].m.m, perspCamera->GetCameraToWorldMatrix(0).m, 4 * 4 * sizeof(float));
@@ -85,9 +89,28 @@ void CompiledScene::CompileCamera() {
 			break;
 		}
 		default:
-			throw std::runtime_error("Unknown camera type in CompiledScene::CompileCamera(): " + boost::lexical_cast<std::string>(scene->camera->GetType()));
+			throw std::runtime_error("Unknown camera type in CompiledScene::CompileCamera(): " + boost::lexical_cast<std::string>(sceneCamera->GetType()));
 	}
 
+	if (sceneCamera->motionSystem) {
+		if (sceneCamera->motionSystem->interpolatedTransforms.size() > CAMERA_MAX_INTERPOLATED_TRANSFORM)
+			throw std::runtime_error("Too many interpolated transformations in camera motion system: " +
+					ToString(sceneCamera->motionSystem->interpolatedTransforms.size()));
+
+		for (u_int i = 0; i < sceneCamera->motionSystem->interpolatedTransforms.size(); ++i) {
+			const InterpolatedTransform &it = sceneCamera->motionSystem->interpolatedTransforms[i];
+
+			// Here, I assume that luxrays::ocl::InterpolatedTransform and
+			// luxrays::InterpolatedTransform are the same
+			camera.interpolatedTransforms[i] = *((const luxrays::ocl::InterpolatedTransform *)&it);
+		}
+
+		camera.motionSystem.interpolatedTransformFirstIndex = 0;
+		camera.motionSystem.interpolatedTransformLastIndex = sceneCamera->motionSystem->interpolatedTransforms.size() - 1;
+	} else {
+		camera.motionSystem.interpolatedTransformFirstIndex = NULL_INDEX;
+		camera.motionSystem.interpolatedTransformLastIndex = NULL_INDEX;
+	}
 }
 
 static bool MeshPtrCompare(Mesh *p0, Mesh *p1) {
@@ -197,7 +220,7 @@ void CompiledScene::CompileGeometry() {
 
 			if (mesh->HasNormals()) {
 				for (u_int j = 0; j < mesh->GetTotalVertexCount(); ++j)
-					normals.push_back(mesh->GetShadeNormal(j));
+					normals.push_back(mesh->GetShadeNormal(0.f, j));
 			} else
 				currentMeshDesc.normalsOffset = NULL_INDEX;
 
@@ -236,7 +259,7 @@ void CompiledScene::CompileGeometry() {
 			//------------------------------------------------------------------
 
 			for (u_int j = 0; j < mesh->GetTotalVertexCount(); ++j)
-				verts.push_back(mesh->GetVertex(j));
+				verts.push_back(mesh->GetVertex(0.f, j));
 
 			//------------------------------------------------------------------
 			// Translate mesh indices
@@ -651,9 +674,9 @@ void CompiledScene::CompileLights() {
 				oclLight->type = slg::ocl::TYPE_TRIANGLE;
 
 				// TriangleLight data
-				ASSIGN_VECTOR(oclLight->triangle.v0, mesh->GetVertex(tri->v[0]));
-				ASSIGN_VECTOR(oclLight->triangle.v1, mesh->GetVertex(tri->v[1]));
-				ASSIGN_VECTOR(oclLight->triangle.v2, mesh->GetVertex(tri->v[2]));
+				ASSIGN_VECTOR(oclLight->triangle.v0, mesh->GetVertex(0.f, tri->v[0]));
+				ASSIGN_VECTOR(oclLight->triangle.v1, mesh->GetVertex(0.f, tri->v[1]));
+				ASSIGN_VECTOR(oclLight->triangle.v2, mesh->GetVertex(0.f, tri->v[2]));
 				if (mesh->HasUVs()) {
 					ASSIGN_UV(oclLight->triangle.uv0, mesh->GetUV(tri->v[0]));
 					ASSIGN_UV(oclLight->triangle.uv1, mesh->GetUV(tri->v[1]));

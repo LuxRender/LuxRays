@@ -88,7 +88,7 @@ public:
 					meshVertCount = (*mesh)->GetTotalVertexCount();
 					meshVertIndex = 0;
 				}
-				tmpVerts[i] = (*mesh)->GetVertex(meshVertIndex++);
+				tmpVerts[i] = (*mesh)->GetVertex(0.f, meshVertIndex++);
 				++vertsCopied;
 			}
 
@@ -115,11 +115,11 @@ public:
 		//----------------------------------------------------------------------
 
 		// Check how many pages I have to allocate
-		const size_t maxNodeCount = maxMemAlloc / sizeof(BVHAccelArrayNode);
+		const size_t maxNodeCount = maxMemAlloc / sizeof(luxrays::ocl::BVHAccelArrayNode);
 		const u_int totalNodeCount = bvh->nNodes;
-		const BVHAccelArrayNode *nodes = bvh->bvhTree;
+		const luxrays::ocl::BVHAccelArrayNode *nodes = bvh->bvhTree;
 		// Allocate a temporary buffer for the copy of the BVH nodes
-		BVHAccelArrayNode *tmpNodes = new BVHAccelArrayNode[Min<size_t>(bvh->nNodes, maxNodeCount)];
+		luxrays::ocl::BVHAccelArrayNode *tmpNodes = new luxrays::ocl::BVHAccelArrayNode[Min<size_t>(bvh->nNodes, maxNodeCount)];
 		u_int nodeIndex = 0;
 
 		do {
@@ -127,11 +127,11 @@ public:
 			const u_int pageNodeCount = Min<size_t>(leftNodeCount, maxNodeCount);
 
 			// Make a copy of the nodes
-			memcpy(tmpNodes, &nodes[nodeIndex], sizeof(BVHAccelArrayNode) * pageNodeCount);
+			memcpy(tmpNodes, &nodes[nodeIndex], sizeof(luxrays::ocl::BVHAccelArrayNode) * pageNodeCount);
 
 			// Update the vertex and node references
 			for (u_int i = 0; i < pageNodeCount; ++i) {
-				BVHAccelArrayNode *node = &tmpNodes[i];
+				luxrays::ocl::BVHAccelArrayNode *node = &tmpNodes[i];
 				if (BVHNodeData_IsLeaf(node->nodeData)) {
 					// Update the vertex references
 					for (u_int j = 0; j < 3; ++j) {
@@ -155,11 +155,11 @@ public:
 			LR_LOG(deviceContext, "[OpenCL device::" << deviceName <<
 				"] BVH buffer size (Page " << nodeBuffs.size() <<", " <<
 				pageNodeCount << " nodes): " <<
-				(sizeof(BVHAccelArrayNode) * pageNodeCount / 1024) <<
+				(sizeof(luxrays::ocl::BVHAccelArrayNode) * pageNodeCount / 1024) <<
 				"Kbytes");
 			cl::Buffer *bb = new cl::Buffer(oclContext,
 				CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-				sizeof(BVHAccelArrayNode) * pageNodeCount,
+				sizeof(luxrays::ocl::BVHAccelArrayNode) * pageNodeCount,
 				(void *)tmpNodes);
 			device->AllocMemory(bb->getInfo<CL_MEM_SIZE>());
 			nodeBuffs.push_back(bb);
@@ -192,7 +192,9 @@ public:
 			kernelDefs << "#define BVH_NODES_PAGE" << i << " 1\n";
 		//LR_LOG(deviceContext, "[OpenCL device::" << deviceName << "] BVH kernel definitions: \n" << kernelDefs.str());
 
-		intersectionKernelSource = kernelDefs.str() + luxrays::ocl::KernelSource_bvh;
+		intersectionKernelSource = kernelDefs.str() +
+				luxrays::ocl::KernelSource_bvh_types +
+				luxrays::ocl::KernelSource_bvh;
 		
 		std::string code(
 			kernelDefs.str() +
@@ -207,6 +209,7 @@ public:
 			luxrays::ocl::KernelSource_bbox_funcs +
 			luxrays::ocl::KernelSource_triangle_types +
 			luxrays::ocl::KernelSource_triangle_funcs +
+			luxrays::ocl::KernelSource_bvh_types +
 			luxrays::ocl::KernelSource_bvh);
 		cl::Program::Sources source(1, std::make_pair(code.c_str(), code.length()));
 		cl::Program program = cl::Program(oclContext, source);
@@ -335,8 +338,8 @@ void BVHAccel::Init(const std::deque<const Mesh *> &ms, const u_longlong totVert
 			BVHAccelTreeNode *node = new BVHAccelTreeNode();
 
 			node->bbox = Union(
-					BBox(mesh->GetVertex(p[i].v[0]), mesh->GetVertex(p[i].v[1])),
-					mesh->GetVertex(p[i].v[2]));
+					BBox(mesh->GetVertex(0.f, p[i].v[0]), mesh->GetVertex(0.f, p[i].v[1])),
+					mesh->GetVertex(0.f, p[i].v[2]));
 			// NOTE - Ratow - Expand bbox a little to make sure rays collide
 			node->bbox.Expand(MachineEpsilon::E(node->bbox));
 			node->triangleLeaf.meshIndex = meshIndex;
@@ -357,11 +360,11 @@ void BVHAccel::Init(const std::deque<const Mesh *> &ms, const u_longlong totVert
 
 	LR_LOG(ctx, "Pre-processing Bounding Volume Hierarchy, total nodes: " << nNodes);
 
-	bvhTree = new BVHAccelArrayNode[nNodes];
+	bvhTree = new luxrays::ocl::BVHAccelArrayNode[nNodes];
 	BuildArray(&meshes, rootNode, 0, bvhTree);
 	FreeHierarchy(rootNode);
 
-	LR_LOG(ctx, "Total BVH memory usage: " << nNodes * sizeof(BVHAccelArrayNode) / 1024 << "Kbytes");
+	LR_LOG(ctx, "Total BVH memory usage: " << nNodes * sizeof(luxrays::ocl::BVHAccelArrayNode) / 1024 << "Kbytes");
 	//LR_LOG(ctx, "Finished building Bounding Volume Hierarchy array");
 
 	initialized = true;
@@ -521,10 +524,10 @@ void BVHAccel::FindBestSplit(const BVHParams &params, std::vector<BVHAccelTreeNo
 }
 
 u_int BVHAccel::BuildArray(const std::deque<const Mesh *> *meshes, BVHAccelTreeNode *node,
-		u_int offset, BVHAccelArrayNode *bvhTree) {
+		u_int offset, luxrays::ocl::BVHAccelArrayNode *bvhTree) {
 	// Build array by recursively traversing the tree depth-first
 	while (node) {
-		BVHAccelArrayNode *p = &bvhTree[offset];
+		luxrays::ocl::BVHAccelArrayNode *p = &bvhTree[offset];
 
 		if (node->leftChild) {
 			// It is a BVH node
@@ -546,6 +549,7 @@ u_int BVHAccel::BuildArray(const std::deque<const Mesh *> *meshes, BVHAccelTreeN
 				// It is a BVH of BVHs (i.e. MBVH)
 				p->bvhLeaf.leafIndex = node->bvhLeaf.leafIndex;
 				p->bvhLeaf.transformIndex = node->bvhLeaf.transformIndex;
+				p->bvhLeaf.motionIndex = node->bvhLeaf.motionIndex;
 				p->bvhLeaf.meshOffsetIndex = node->bvhLeaf.meshOffsetIndex;
 			}
 
@@ -572,15 +576,15 @@ bool BVHAccel::Intersect(const Ray *initialRay, RayHit *rayHit) const {
 
 	float t, b1, b2;
 	while (currentNode < stopNode) {
-		const BVHAccelArrayNode &node = bvhTree[currentNode];
+		const luxrays::ocl::BVHAccelArrayNode &node = bvhTree[currentNode];
 
 		const u_int nodeData = node.nodeData;
 		if (BVHNodeData_IsLeaf(nodeData)) {
 			// It is a leaf, check the triangle
 			const Mesh *mesh = meshes[node.triangleLeaf.meshIndex];
-			const Point p0 = mesh->GetVertex(node.triangleLeaf.v[0]);
-			const Point p1 = mesh->GetVertex(node.triangleLeaf.v[1]);
-			const Point p2 = mesh->GetVertex(node.triangleLeaf.v[2]);
+			const Point p0 = mesh->GetVertex(0.f, node.triangleLeaf.v[0]);
+			const Point p1 = mesh->GetVertex(0.f, node.triangleLeaf.v[1]);
+			const Point p2 = mesh->GetVertex(0.f, node.triangleLeaf.v[2]);
 
 			if (Triangle::Intersect(ray, p0, p1, p2, &t, &b1, &b2)) {
 				if (t < rayHit->t) {

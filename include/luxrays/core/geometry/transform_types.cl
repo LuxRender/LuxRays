@@ -1,4 +1,4 @@
-#line 2 "ray_types.cl"
+#line 2 "transform_types.cl"
 
 /***************************************************************************
  * Copyright 1998-2013 by authors (see AUTHORS.txt)                        *

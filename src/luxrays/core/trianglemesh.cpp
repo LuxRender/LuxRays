@@ -24,6 +24,10 @@
 
 using namespace luxrays;
 
+//------------------------------------------------------------------------------
+// TriangleMesh
+//------------------------------------------------------------------------------
+
 BBox TriangleMesh::GetBBox() const {
 	BBox bbox;
 	for (unsigned int i = 0; i < vertCount; ++i)
@@ -74,51 +78,10 @@ TriangleMesh *TriangleMesh::Merge(
 	unsigned int iIndex = 0;
 	TriangleMeshID currentID = 0;
 	for (std::deque<const Mesh *>::const_iterator m = meshes.begin(); m < meshes.end(); m++) {
-		const Triangle *tris;
-		switch ((*m)->GetType()) {
-			case TYPE_TRIANGLE: {
-				const TriangleMesh *mesh = (TriangleMesh *)*m;
-				// Copy the mesh vertices
-				memcpy(&v[vIndex], mesh->GetVertices(), sizeof(Point) * mesh->GetTotalVertexCount());
+		// Copy the mesh vertices
+		memcpy(&v[vIndex], (*m)->GetVertices(), sizeof(Point) * (*m)->GetTotalVertexCount());
 
-				tris = mesh->GetTriangles();
-				break;
-			}
-			case TYPE_TRIANGLE_INSTANCE: {
-				const InstanceTriangleMesh *mesh = (InstanceTriangleMesh *)*m;
-
-				// Copy the mesh vertices
-				for (unsigned int j = 0; j < mesh->GetTotalVertexCount(); j++)
-					v[vIndex + j] = mesh->GetVertex(j);
-
-				tris = mesh->GetTriangles();
-				break;
-			}
-			case TYPE_EXT_TRIANGLE: {
-				const ExtTriangleMesh *mesh = (ExtTriangleMesh *)*m;
-
-				// Copy the mesh vertices
-				for (unsigned int j = 0; j <mesh->GetTotalVertexCount(); j++)
-					v[vIndex + j] = mesh->GetVertex(j);
-
-				tris = mesh->GetTriangles();
-				break;
-			}
-			case TYPE_EXT_TRIANGLE_INSTANCE: {
-				const ExtInstanceTriangleMesh *mesh = (ExtInstanceTriangleMesh *)*m;
-
-				// Copy the mesh vertices
-				for (unsigned int j = 0; j <mesh->GetTotalVertexCount(); j++)
-					v[vIndex + j] = mesh->GetVertex(j);
-
-				tris = mesh->GetTriangles();
-				break;
-			}
-			default:
-				assert (false);
-				tris = NULL;
-				break;
-		}
+		const Triangle *tris = (*m)->GetTriangles();
 
 		// Translate mesh indices
 		for (unsigned int j = 0; j < (*m)->GetTotalTriangleCount(); j++) {
@@ -142,4 +105,12 @@ TriangleMesh *TriangleMesh::Merge(
 	}
 
 	return new TriangleMesh(totalVertexCount, totalTriangleCount, v, i);
+}
+
+//------------------------------------------------------------------------------
+// TriangleMesh
+//------------------------------------------------------------------------------
+
+void MotionTriangleMesh::ApplyTransform(const Transform &trans) {
+	motionSystem.ApplyTransform(trans);
 }

@@ -62,7 +62,9 @@ public:
 			kernelDefs << "#define QBVH_USE_LOCAL_MEMORY\n";
 		//LR_LOG(deviceContext, "[OpenCL device::" << deviceName << "] QBVH kernel definitions: \n" << kernelDefs.str());
 
-		intersectionKernelSource = kernelDefs.str() + luxrays::ocl::KernelSource_qbvh;
+		intersectionKernelSource = kernelDefs.str() +
+				luxrays::ocl::KernelSource_qbvh_types +
+				luxrays::ocl::KernelSource_qbvh;
 
 		std::string code(
 			kernelDefs.str() +
@@ -74,6 +76,7 @@ public:
 			luxrays::ocl::KernelSource_ray_types +
 			luxrays::ocl::KernelSource_ray_funcs +
 			luxrays::ocl::KernelSource_bbox_types +
+			luxrays::ocl::KernelSource_qbvh_types +
 			luxrays::ocl::KernelSource_qbvh);
 		cl::Program::Sources source(1, std::make_pair(code.c_str(), code.length()));
 		cl::Program program = cl::Program(oclContext, source);
@@ -558,8 +561,8 @@ void QBVHAccel::Init(const std::deque<const Mesh *> &ms, const u_longlong totalV
 
 			// Compute the bounding box for the triangle
 			primsBboxes[i][j] = Union(
-					BBox(mesh->GetVertex(p[j].v[0]), mesh->GetVertex(p[j].v[1])),
-					mesh->GetVertex(p[j].v[2]));
+					BBox(mesh->GetVertex(0.f, p[j].v[0]), mesh->GetVertex(0.f, p[j].v[1])),
+					mesh->GetVertex(0.f, p[j].v[2]));
 			primsBboxes[i][j].Expand(MachineEpsilon::E(primsBboxes[i][j]));
 			primsCentroids[i][j] = (primsBboxes[i][j].pMin + primsBboxes[i][j].pMax) * .5f;
 

@@ -23,6 +23,8 @@
 
 #include "luxrays/luxrays.h"
 #include "luxrays/accelerators/bvhaccel.h"
+#include "luxrays/core/geometry/transform.h"
+#include "luxrays/core/geometry/motionsystem.h"
 
 namespace luxrays {
 
@@ -55,10 +57,11 @@ private:
 
 	// The root BVH tree
 	unsigned int nRootNodes;
-	BVHAccelArrayNode *bvhRootTree;
+	luxrays::ocl::BVHAccelArrayNode *bvhRootTree;
 
-	std::vector<BVHAccel *> uniqueLeafs;
-	std::vector<Matrix4x4> uniqueLeafsTransform;
+	std::vector<const BVHAccel *> uniqueLeafs;
+	std::vector<const Transform *> uniqueLeafsTransform;
+	std::vector<const MotionSystem *> uniqueLeafsMotionSystem;
 	
 	const Context *ctx;
 	std::deque<const Mesh *> meshes;

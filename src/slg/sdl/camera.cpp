@@ -29,10 +29,34 @@ using namespace std;
 using namespace luxrays;
 using namespace slg;
 
+//------------------------------------------------------------------------------
+// Camera
+//------------------------------------------------------------------------------
+
+Properties Camera::ToProperties() const {
+	Properties props;
+
+	props.Set(Property("scene.camera.cliphither")(clipHither));
+	props.Set(Property("scene.camera.clipyon")(clipYon));
+	props.Set(Property("scene.camera.lensradius")(lensRadius));
+	props.Set(Property("scene.camera.focaldistance")(focalDistance));
+	props.Set(Property("scene.camera.shutteropen")(shutterOpen));
+	props.Set(Property("scene.camera.shutterclose")(shutterClose));
+	props.Set(Property("scene.camera.autofocus.enable")(autoFocus));
+
+	if (motionSystem)
+		props.Set(motionSystem->ToProperties("scene.camera."));
+		
+	return props;
+}
+
+//------------------------------------------------------------------------------
+// PerspectiveCamera
+//------------------------------------------------------------------------------
+
 PerspectiveCamera::PerspectiveCamera(const luxrays::Point &o, const luxrays::Point &t,
 		const luxrays::Vector &u, const float *region) : Camera(PERSPECTIVE),
-		orig(o), target(t), up(Normalize(u)), fieldOfView(45.f), clipHither(1e-3f), clipYon(1e30f),
-		lensRadius(0.f), focalDistance(10.f) {
+		orig(o), target(t), up(Normalize(u)), fieldOfView(45.f) {
 	if (region) {
 		autoUpdateFilmRegion = false;
 		filmRegion[0] = region[0];
@@ -207,7 +231,7 @@ void PerspectiveCamera::InitCameraTransforms(CameraTransforms *trans, const floa
 
 void PerspectiveCamera::GenerateRay(
 	const float filmX, const float filmY,
-	Ray *ray, const float u1, const float u2) const {
+	Ray *ray, const float u1, const float u2, const float u3) const {
 	u_int transIndex;
 	Point Pras, Pcamera;
 	if (enableHorizStereo) {
@@ -251,8 +275,12 @@ void PerspectiveCamera::GenerateRay(
 	ray->d = Normalize(ray->d);
 	ray->mint = MachineEpsilon::E(ray->o);
 	ray->maxt = (clipYon - clipHither) / ray->d.z;
+	ray->time = Lerp(u3, shutterOpen, shutterClose);
 
-	*ray = camTrans[transIndex].cameraToWorld * (*ray);
+	if (motionSystem)
+		*ray = motionSystem->Sample(ray->time) * (camTrans[transIndex].cameraToWorld * (*ray));
+	else
+		*ray = camTrans[transIndex].cameraToWorld * (*ray);
 
 	// World arbitrary clipping plane support
 	if (enableClippingPlane)
@@ -306,8 +334,9 @@ bool PerspectiveCamera::GetSamplePosition(Ray *ray, float *x, float *y) const {
 		ray->maxt * cosi > clipYon)))
 		return false;
 
-	const Point pO(Inverse(camTrans[0].rasterToWorld) * (ray->o + ((lensRadius > 0.f) ?
-		(ray->d * (focalDistance / cosi)) : ray->d)));
+	Point pO(
+		Inverse((motionSystem) ? (motionSystem->Sample(ray->time) * camTrans[0].rasterToWorld) : camTrans[0].rasterToWorld) *
+		(ray->o + ((lensRadius > 0.f) ?	(ray->d * (focalDistance / cosi)) : ray->d)));
 
 	*x = pO.x;
 	*y = filmHeight - 1 - pO.y;
@@ -331,7 +360,8 @@ bool PerspectiveCamera::GetSamplePosition(Ray *ray, float *x, float *y) const {
 	}
 }
 
-bool PerspectiveCamera::SampleLens(const float u1, const float u2,
+bool PerspectiveCamera::SampleLens(const float time,
+		const float u1, const float u2,
 		Point *lensp) const {
 	Point lensPoint(0.f, 0.f, 0.f);
 	if (lensRadius > 0.f) {
@@ -340,7 +370,10 @@ bool PerspectiveCamera::SampleLens(const float u1, const float u2,
 		lensPoint.y *= lensRadius;
 	}
 
-	*lensp = camTrans[0].cameraToWorld * lensPoint;
+	if (motionSystem)
+		*lensp = motionSystem->Sample(time) * (camTrans[0].cameraToWorld * lensPoint);
+	else
+		*lensp = camTrans[0].cameraToWorld * lensPoint;
 
 	return true;
 }
@@ -348,6 +381,8 @@ bool PerspectiveCamera::SampleLens(const float u1, const float u2,
 Properties PerspectiveCamera::ToProperties() const {
 	Properties props;
 
+	props.Set(Camera::ToProperties());
+	
 	props.Set(Property("scene.camera.lookat.orig")(orig));
 	props.Set(Property("scene.camera.lookat.target")(target));
 	props.Set(Property("scene.camera.up")(up));
@@ -355,14 +390,9 @@ Properties PerspectiveCamera::ToProperties() const {
 	if (!autoUpdateFilmRegion)
 		props.Set(Property("scene.camera.screenwindow")(filmRegion[0], filmRegion[1], filmRegion[2], filmRegion[3]));
 
-	props.Set(Property("scene.camera.cliphither")(clipHither));
-	props.Set(Property("scene.camera.clipyon")(clipYon));
-	props.Set(Property("scene.camera.lensradius")(lensRadius));
-	props.Set(Property("scene.camera.focaldistance")(focalDistance));
 	props.Set(Property("scene.camera.fieldofview")(fieldOfView));
 	props.Set(Property("scene.camera.horizontalstereo.enable")(enableHorizStereo));
 	props.Set(Property("scene.camera.horizontalstereo.oculusrift.barrelpostpro.enable")(enableOculusRiftBarrel));
-	props.Set(Property("scene.camera.autofocus.enable")(autoFocus));
 
 	return props;
 }
@@ -464,6 +494,8 @@ Camera *Camera::AllocCamera(const luxrays::Properties &props) {
 	camera->clipYon = props.Get(Property("scene.camera.clipyon")(1e30f)).Get<float>();
 	camera->lensRadius = props.Get(Property("scene.camera.lensradius")(0.f)).Get<float>();
 	camera->focalDistance = props.Get(Property("scene.camera.focaldistance")(10.f)).Get<float>();
+	camera->shutterOpen = props.Get(Property("scene.camera.shutteropen")(0.f)).Get<float>();
+	camera->shutterClose = props.Get(Property("scene.camera.shutterclose")(1.f)).Get<float>();
 	camera->fieldOfView = props.Get(Property("scene.camera.fieldofview")(45.f)).Get<float>();
 	camera->autoFocus = props.Get(Property("scene.camera.autofocus.enable")(false)).Get<bool>();
 
@@ -500,6 +532,29 @@ Camera *Camera::AllocCamera(const luxrays::Properties &props) {
 	} else {
 		SDL_LOG("Camera clipping plane disabled");
 		camera->SetClippingPlane(false);
+	}
+
+	// Check if I have to use a motion system
+	if (props.IsDefined("scene.camera.motion.0.time")) {
+		// Build the motion system
+		vector<float> times;
+		vector<Transform> transforms;
+		for (u_int i =0;; ++i) {
+			const string prefix = "scene.camera.motion." + ToString(i);
+			if (!props.IsDefined(prefix +".time"))
+				break;
+
+			const float t = props.Get(prefix +".time").Get<float>();
+			if (i > 0 && t <= times.back())
+				throw runtime_error("Motion camera time must be monotonic");
+			times.push_back(t);
+
+			const Matrix4x4 mat = props.Get(Property(prefix +
+				".transformation")(Matrix4x4::MAT_IDENTITY)).Get<Matrix4x4>();
+			transforms.push_back(Transform(mat));
+		}
+
+		camera->motionSystem = new MotionSystem(times, transforms);
 	}
 
 	return camera.release();

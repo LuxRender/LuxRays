@@ -181,7 +181,7 @@ size_t PathOCLBaseRenderThread::GetOpenCLHitPointSize() const {
 	// Volume fields
 	if (renderEngine->compiledScene->HasVolumes())
 		hitPointSize += 2 * sizeof(u_int) + 2 * sizeof(u_int) +
-				sizeof(int); // This is for bool field
+				sizeof(int);
 
 	return hitPointSize;
 }
@@ -198,7 +198,7 @@ size_t PathOCLBaseRenderThread::GetOpenCLBSDFSize() const {
 	bsdfSize += sizeof(slg::ocl::Frame);
 	// Add BSDF.isVolume memory size
 	if (renderEngine->compiledScene->HasVolumes())
-		bsdfSize += sizeof(int); // This is for bool field
+		bsdfSize += sizeof(int);
 
 	return bsdfSize;
 }
@@ -248,8 +248,8 @@ size_t PathOCLBaseRenderThread::GetOpenCLSampleResultSize() const {
 		sampleResultSize += sizeof(Film::RAYCOUNT);
 
 	sampleResultSize += sizeof(BSDFEvent) +
-			2 * sizeof(int);  // For the 2 boolean fields
-
+			2 * sizeof(int);
+	
 	return sampleResultSize;
 }
 
@@ -903,7 +903,9 @@ void PathOCLBaseRenderThread::InitKernels() {
 			luxrays::ocl::KernelSource_color_types <<
 			luxrays::ocl::KernelSource_frame_types <<
 			luxrays::ocl::KernelSource_matrix4x4_types <<
+			luxrays::ocl::KernelSource_quaternion_types <<
 			luxrays::ocl::KernelSource_transform_types <<
+			luxrays::ocl::KernelSource_motionsystem_types <<
 			// OpenCL LuxRays Funcs
 			luxrays::ocl::KernelSource_epsilon_funcs <<
 			luxrays::ocl::KernelSource_utils_funcs <<
@@ -913,7 +915,9 @@ void PathOCLBaseRenderThread::InitKernels() {
 			luxrays::ocl::KernelSource_color_funcs <<
 			luxrays::ocl::KernelSource_frame_funcs <<
 			luxrays::ocl::KernelSource_matrix4x4_funcs <<
+			luxrays::ocl::KernelSource_quaternion_funcs <<
 			luxrays::ocl::KernelSource_transform_funcs <<
+			luxrays::ocl::KernelSource_motionsystem_funcs <<
 			// OpenCL SLG Types
 			slg::ocl::KernelSource_randomgen_types <<
 			slg::ocl::KernelSource_trianglemesh_types <<

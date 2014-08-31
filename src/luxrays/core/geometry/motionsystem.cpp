@@ -22,12 +22,17 @@ using std::memset;
 #include <vector>
 #include <algorithm>
 #include <utility>
+#include <boost/foreach.hpp>
 
 #include "luxrays/core/geometry/motionsystem.h"
 #include "luxrays/core/geometry/matrix4x4.h"
 using luxrays::Matrix4x4;
 
 namespace luxrays {
+
+//------------------------------------------------------------------------------
+// MotionSystem
+//------------------------------------------------------------------------------
 
 InterpolatedTransform::InterpolatedTransform(float st, float et,
 	const Transform &s, const Transform &e) : hasRotation(false),
@@ -38,9 +43,8 @@ InterpolatedTransform::InterpolatedTransform(float st, float et,
 	start = s;
 	end = e;
 
-	if (startTime == endTime) {
+	if (startTime == endTime)
 		return;
-	}
 
 	startT = DecomposedTransform(start.m);
 	endT = DecomposedTransform(end.m);
@@ -133,23 +137,20 @@ Transform InterpolatedTransform::Sample(float time) const {
 		}
 	}
 
-	if (hasTranslationX) {
+	if (hasTranslationX)
 		interMatrix[0][3] = Lerp(le, startT.Tx, endT.Tx);
-	} else {
+	else
 		interMatrix[0][3] = startT.Tx;
-	}
 
-	if (hasTranslationY) {
+	if (hasTranslationY)
 		interMatrix[1][3] = Lerp(le, startT.Ty, endT.Ty);
-	} else {
+	else
 		interMatrix[1][3] = startT.Ty;
-	}
 
-	if (hasTranslationZ) {
+	if (hasTranslationZ)
 		interMatrix[2][3] = Lerp(le, startT.Tz, endT.Tz);
-	} else {
+	else
 		interMatrix[2][3] = startT.Tz;
-	}
 
 	return Transform(interMatrix);
 }
@@ -161,7 +162,8 @@ static void V4MulByMatrix(const Matrix4x4 &A, const float x[4], float b[4]) {
 	b[3] = A.m[3][0]*x[0] + A.m[3][1]*x[1] + A.m[3][2]*x[2] + A.m[3][3]*x[3];
 }
 
-InterpolatedTransform::DecomposedTransform::DecomposedTransform(const Matrix4x4 &m) : Valid(false), R(m) {
+InterpolatedTransform::DecomposedTransform::DecomposedTransform(const Matrix4x4 &m) :
+		R(m), Valid(false) {
 	// Normalize the matrix. 
 	if (R.m[3][3] == 0)
 		return;
@@ -270,7 +272,26 @@ InterpolatedTransform::DecomposedTransform::DecomposedTransform(const Matrix4x4 
 	Valid = true;
 }
 
-MotionSystem::MotionSystem(const vector<float> &t, const vector<Transform> &transforms) : times(t) {
+//------------------------------------------------------------------------------
+// MotionSystem
+//------------------------------------------------------------------------------
+
+MotionSystem::MotionSystem(const vector<float> &t, const vector<Transform> &transforms) {
+	Init(t, transforms);
+}
+
+MotionSystem::MotionSystem(const Transform &t) : times(1, 0.f), interpolatedTransforms(1, InterpolatedTransform(0.f, 0.f, t, t)) {
+}
+
+MotionSystem::MotionSystem() : times(1, 0.f), interpolatedTransforms(1, InterpolatedTransform(0.f, 0.f, Transform(), Transform())) {
+}
+
+void MotionSystem::Init(const vector<float> &t, const vector<Transform> &transforms) {
+	times.clear();
+	interpolatedTransforms.clear();
+
+	times = t;
+
 	typedef vector<float>::const_iterator time_cit;
 	typedef vector<Transform>::const_iterator trans_cit;
 
@@ -294,12 +315,6 @@ MotionSystem::MotionSystem(const vector<float> &t, const vector<Transform> &tran
 	interpolatedTransforms.push_back(InterpolatedTransform(*prev_time, *prev_time, *prev_trans, *prev_trans));
 }
 
-MotionSystem::MotionSystem(const Transform &t) : times(1, 0.f), interpolatedTransforms(1, InterpolatedTransform(0.f, 0.f, t, t)) {
-}
-
-MotionSystem::MotionSystem() : times(1, 0.f), interpolatedTransforms(1, InterpolatedTransform(0.f, 0.f, Transform(), Transform())) {
-}
-
 bool MotionSystem::IsStatic() const {
 	if (times.size() <= 1)
 		return true;
@@ -320,12 +335,46 @@ BBox MotionSystem::Bound(BBox ibox) const {;
 
 	BBox result;
 
-	for(msys_cit ms = interpolatedTransforms.begin(); ms != interpolatedTransforms.end(); ++ms) {
+	for(msys_cit ms = interpolatedTransforms.begin(); ms != interpolatedTransforms.end(); ++ms)
 		result = Union(result, ms->Bound(ibox));
-	}
 
 	return result;
 }
+
+void MotionSystem::ApplyTransform(const Transform &trans) {
+	const vector<float> t = times;
+	vector<Transform> transforms;
+
+	// First and last interpolatedTransforms have the same transformation start and end
+	for (u_int i = 1 ; i < interpolatedTransforms.size() - 1; ++i)
+		transforms.push_back(interpolatedTransforms[i].start * trans);
+	transforms.push_back(interpolatedTransforms[interpolatedTransforms.size() - 2].end * trans);
+
+	Init(t, transforms);
+}
+
+Properties MotionSystem::ToProperties(const std::string &prefix) const {
+	Properties props;
+
+	// First and last interpolatedTransforms have the same transformation start and end
+	for (u_int i = 1; i < interpolatedTransforms.size() - 1; ++i) {
+		const InterpolatedTransform &it = interpolatedTransforms[i];
+
+		props.Set(Property(prefix+"motion." + ToString(i - 1) + ".time")(it.startTime));
+		props.Set(Property(prefix+"motion." + ToString(i - 1) + ".transformation")(it.start.m));
+	}
+
+	const u_int lastIndex = interpolatedTransforms.size() - 2;
+	const InterpolatedTransform &it = interpolatedTransforms[lastIndex];
+	props.Set(Property(prefix+"motion." + ToString(lastIndex) + ".time")(it.endTime));
+	props.Set(Property(prefix+"motion." + ToString(lastIndex) + ".transformation")(it.end.m));
+		
+	return props;
+}
+
+//------------------------------------------------------------------------------
+// MotionTransform
+//------------------------------------------------------------------------------
 
 // Contains one or more <time, transform> pairs (knots) representing a path
 MotionTransform::MotionTransform(const MotionTransform &other) : times(other.times), transforms(other.transforms) { }

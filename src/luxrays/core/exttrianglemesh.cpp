@@ -28,7 +28,7 @@
 
 using namespace luxrays;
 
-bool ExtMesh::GetDifferentials(const u_int triIndex,
+bool ExtMesh::GetDifferentials(const float time, const u_int triIndex,
         Vector *dpdu, Vector *dpdv,
         Normal *dndu, Normal *dndv) const {
     // Compute triangle partial derivatives
@@ -54,9 +54,9 @@ bool ExtMesh::GetDifferentials(const u_int triIndex,
 
         // Using GetVertex() in order to do all computation relative to
         // the global coordinate system.
-        const Point p0 = GetVertex(tri.v[0]);
-        const Point p1 = GetVertex(tri.v[1]);
-        const Point p2 = GetVertex(tri.v[2]);
+        const Point p0 = GetVertex(time, tri.v[0]);
+        const Point p1 = GetVertex(time, tri.v[1]);
+        const Point p2 = GetVertex(time, tri.v[2]);
 
         const Vector dp1 = p0 - p2;
         const Vector dp2 = p1 - p2;
@@ -66,9 +66,9 @@ bool ExtMesh::GetDifferentials(const u_int triIndex,
         if (HasNormals()) {
             // Using GetNormal() in order to do all computation relative to
             // the global coordinate system.
-            const Normal n0 = GetShadeNormal(tri.v[0]);
-            const Normal n1 = GetShadeNormal(tri.v[1]);
-            const Normal n2 = GetShadeNormal(tri.v[2]);
+            const Normal n0 = GetShadeNormal(time, tri.v[0]);
+            const Normal n1 = GetShadeNormal(time, tri.v[1]);
+            const Normal n2 = GetShadeNormal(time, tri.v[2]);
 
             const Normal dn1 = n0 - n2;
             const Normal dn2 = n1 - n2;
@@ -392,34 +392,25 @@ ExtTriangleMesh *ExtTriangleMesh::CreateExtTriangleMesh(
 // ExtTriangleMesh
 //------------------------------------------------------------------------------
 
-ExtTriangleMesh::ExtTriangleMesh(ExtTriangleMesh *mesh) {
-	assert (mesh != NULL);
-
-	vertCount = mesh->vertCount;
-	triCount = mesh->triCount;
-	vertices = mesh->vertices;
-	tris = mesh->tris;
-
-	normals = mesh->normals;
-	triNormals = mesh->triNormals;
-	uvs = mesh->uvs;
-	cols = mesh->cols;
-	alphas = mesh->alphas;
-}
+//ExtTriangleMesh::ExtTriangleMesh(ExtTriangleMesh *mesh) {
+//	assert (mesh != NULL);
+//
+//	vertCount = mesh->vertCount;
+//	triCount = mesh->triCount;
+//	vertices = mesh->vertices;
+//	tris = mesh->tris;
+//
+//	normals = mesh->normals;
+//	triNormals = mesh->triNormals;
+//	uvs = mesh->uvs;
+//	cols = mesh->cols;
+//	alphas = mesh->alphas;
+//}
 
 ExtTriangleMesh::ExtTriangleMesh(const u_int meshVertCount, const u_int meshTriCount,
 		Point *meshVertices, Triangle *meshTris, Normal *meshNormals, UV *meshUV,
-			Spectrum *meshCols, float *meshAlpha) {
-	assert (meshVertCount > 0);
-	assert (meshTriCount > 0);
-	assert (meshVertices != NULL);
-	assert (meshTris != NULL);
-
-	vertCount = meshVertCount;
-	triCount = meshTriCount;
-	vertices = meshVertices;
-	tris = meshTris;
-
+			Spectrum *meshCols, float *meshAlpha) :
+		TriangleMesh(meshVertCount, meshTriCount, meshVertices, meshTris) {
 	normals = meshNormals;
 	uvs = meshUV;
 	cols = meshCols;
@@ -466,19 +457,6 @@ Normal *ExtTriangleMesh::ComputeNormals() {
 	}
 
 	return allocated ? normals : NULL;
-}
-
-BBox ExtTriangleMesh::GetBBox() const {
-	BBox bbox;
-	for (u_int i = 0; i < vertCount; ++i)
-		bbox = Union(bbox, vertices[i]);
-
-	return bbox;
-}
-
-void ExtTriangleMesh::ApplyTransform(const Transform &trans) {
-	for (u_int i = 0; i < vertCount; ++i)
-		vertices[i] *= trans;
 }
 
 void ExtTriangleMesh::WritePly(const std::string &fileName) const {

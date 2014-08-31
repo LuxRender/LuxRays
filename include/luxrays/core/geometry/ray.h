@@ -46,8 +46,8 @@ public:
 	}
 
 	Ray(const Point &origin, const Vector &direction,
-		float start, float end = std::numeric_limits<float>::infinity(),
-		float t = 0.f)
+		const float start, const float end = std::numeric_limits<float>::infinity(),
+		const float t = 0.f)
 		: o(origin), d(direction), mint(start), maxt(end), time(t) { }
 
 	Point operator()(float t) const { return o + d * t; }
@@ -55,6 +55,14 @@ public:
 		signs[0] = boost::math::signbit(d.x);
 		signs[1] = boost::math::signbit(d.y);
 		signs[2] = boost::math::signbit(d.z);
+	}
+	
+	void Update(const Point &origin, const Vector &direction) {
+		o = origin;
+		d = direction;
+		mint = MachineEpsilon::E(origin);
+		maxt = std::numeric_limits<float>::infinity();
+		// Keep the same time value
 	}
 
 	// Ray Public Data
@@ -79,6 +87,12 @@ public:
 	void SetMiss() { meshIndex = 0xffffffffu; };
 	bool Miss() const { return (meshIndex == 0xffffffffu); };
 };
+
+inline std::ostream &operator<<(std::ostream &os, const RayHit &rh) {
+	os << "RayHit[" << rh.t << ", (" << rh.b1 << ", " << rh.b2 << "), " <<
+			rh.meshIndex << ", " << rh.triangleIndex << "]";
+	return os;
+}
 
 }
 

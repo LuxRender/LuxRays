@@ -233,7 +233,7 @@ typedef struct {
 	BlenderNoiseBasis noisebasis;
 	float noisesize, turbulence;
 	float bright, contrast;
-	bool hard;
+	int hard;
 } BlenderWoodTexParam;
 
 typedef struct {
@@ -248,7 +248,6 @@ typedef struct {
 	float exponent;
  	float bright, contrast;
 } BlenderVoronoiTexParam;
-
 
 typedef struct {
 	TextureMapping3D mapping;
