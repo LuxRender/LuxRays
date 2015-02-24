@@ -53,7 +53,7 @@ using luxrays::ocl::Spectrum;
 
 typedef enum {
 	CONST_FLOAT, CONST_FLOAT3, IMAGEMAP, SCALE_TEX, FRESNEL_APPROX_N,
-	FRESNEL_APPROX_K, MIX_TEX, ADD_TEX, HITPOINTCOLOR, HITPOINTALPHA,
+	FRESNEL_APPROX_K, MIX_TEX, ADD_TEX, SUBTRACT_TEX, HITPOINTCOLOR, HITPOINTALPHA,
 	HITPOINTGREY, NORMALMAP_TEX,
 	// Procedural textures
 	BLENDER_BLEND, BLENDER_CLOUDS, BLENDER_DISTORTED_NOISE, BLENDER_MAGIC, BLENDER_MARBLE,
@@ -919,6 +919,53 @@ private:
 	const Texture *tex2;
 };
 
+//------------------------------------------------------------------------------
+// Subtract texture
+//------------------------------------------------------------------------------
+
+class SubtractTexture : public Texture {
+public:
+	SubtractTexture(const Texture *t1, const Texture *t2) : tex1(t1), tex2(t2) { }
+	virtual ~SubtractTexture() { }
+	
+	virtual TextureType GetType() const { return SUBTRACT_TEX; }
+	virtual float GetFloatValue(const HitPoint &hitPoint) const;
+	virtual luxrays::Spectrum GetSpectrumValue(const HitPoint &hitPoint) const;
+	virtual float Y() const {
+		return tex1->Y() - tex2->Y();
+	}
+	virtual float Filter() const {
+		return tex1->Filter() - tex2->Filter();
+	}
+	
+	virtual void AddReferencedTextures(boost::unordered_set<const Texture *> &referencedTexs) const {
+		Texture::AddReferencedTextures(referencedTexs);
+		
+		tex1->AddReferencedTextures(referencedTexs);
+		tex2->AddReferencedTextures(referencedTexs);
+	}
+	virtual void AddReferencedImageMaps(boost::unordered_set<const ImageMap *> &referencedImgMaps) const {
+		tex1->AddReferencedImageMaps(referencedImgMaps);
+		tex2->AddReferencedImageMaps(referencedImgMaps);
+	}
+	
+	virtual void UpdateTextureReferences(const Texture *oldTex, const Texture *newTex) {
+		if (tex1 == oldTex)
+			tex1 = newTex;
+		if (tex2 == oldTex)
+			tex2 = newTex;
+	}
+	
+	const Texture *GetTexture1() const { return tex1; }
+	const Texture *GetTexture2() const { return tex2; }
+	
+	virtual luxrays::Properties ToProperties(const ImageMapCache &imgMapCache) const;
+	
+private:
+	const Texture *tex1;
+	const Texture *tex2;
+};
+	
 //------------------------------------------------------------------------------
 // Windy texture
 //------------------------------------------------------------------------------
