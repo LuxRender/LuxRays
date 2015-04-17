@@ -153,6 +153,9 @@ void Camera_GenerateRay(
 	float3 rayOrig = Transform_ApplyPoint(&camera->rasterToCamera[transIndex], Pras);
 	float3 rayDir = rayOrig;
 
+	if(camera->type == ORTHOGRAPHIC) 
+		rayDir = (float3)(0.f, 0.f, 1.f);
+
 	const float hither = camera->hither;
 
 #if defined(PARAM_CAMERA_HAS_DOF)
@@ -166,7 +169,12 @@ void Camera_GenerateRay(
 	// Compute point on plane of focus
 	const float focalDistance = camera->focalDistance;
 	const float dist = focalDistance - hither;
-	const float ft = dist / rayDir.z;
+
+	float ft = dist;
+
+	if(camera->type == PERSPECTIVE)
+		ft = ft / rayDir.z;
+
 	float3 Pfocus;
 	Pfocus = rayOrig + rayDir * ft;
 
@@ -179,7 +187,11 @@ void Camera_GenerateRay(
 #endif
 
 	rayDir = normalize(rayDir);
-	const float maxt = (camera->yon - hither) / rayDir.z;
+	float maxt = (camera->yon - hither);
+	
+	if(camera->type == PERSPECTIVE)
+		maxt = maxt / rayDir.z;
+
 	const float time = mix(camera->shutterOpen, camera->shutterClose, timeSample);
 
 	// Transform ray in world coordinates
