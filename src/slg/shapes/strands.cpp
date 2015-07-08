@@ -297,6 +297,8 @@ StrendsShape::StrendsShape(const Scene *scene,
 	const cyHairFileHeader &header = hairFile->GetHeader();
 	if (header.hair_count == 0)
 		throw runtime_error("Empty strands shape are not supported");
+	if (useCameraPosition && !scene->camera)
+		throw runtime_error("The scene camera must be defined in order to enable strands useCameraPosition flag");
 
 	SLG_LOG("Refining " << header.hair_count << " strands");
 	const double start = WallClockTime();
@@ -659,14 +661,14 @@ void StrendsShape::TessellateSolid(const Scene *scene,
 			const u_int i3 = (j == solidSideCount - 1) ? (index + solidSideCount) : (index + j + solidSideCount  + 1);
 
 			// First triangle
-			meshTris.push_back(Triangle(i0, i1, i2));
+			meshTris.push_back(Triangle(i0, i2, i1));
 			const Normal n0 = Normal(Cross(meshVerts[i2] - meshVerts[i0], meshVerts[i1] - meshVerts[i0]));
 			meshNorms[i0] += n0;
 			meshNorms[i1] += n0;
 			meshNorms[i2] += n0;
 
 			// Second triangle
-			meshTris.push_back(Triangle(i1, i3, i2));
+			meshTris.push_back(Triangle(i1, i2, i3));
 			const Normal n1 = Normal(Cross(meshVerts[i2] - meshVerts[i0], meshVerts[i3] - meshVerts[i0]));
 			meshNorms[i1] += n1;
 			meshNorms[i3] += n1;
@@ -698,7 +700,7 @@ void StrendsShape::TessellateSolid(const Scene *scene,
 			const u_int i0 = offset + j;
 			const u_int i1 = (j == solidSideCount - 1) ? offset : (offset + j + 1);
 
-			meshTris.push_back(Triangle(i0, i1, i3));
+			meshTris.push_back(Triangle(i1, i0, i3));
 		}
 	}
 
@@ -726,7 +728,7 @@ void StrendsShape::TessellateSolid(const Scene *scene,
 			const u_int i0 = offset + j;
 			const u_int i1 = (j == solidSideCount - 1) ? offset : (offset + j + 1);
 
-			meshTris.push_back(Triangle(i1, i0, i3));
+			meshTris.push_back(Triangle(i0, i1, i3));
 		}
 	}
 }

@@ -86,9 +86,9 @@ float3 Glossy2Material_ConstEvaluate(
 #endif
 	ks = Spectrum_Clamp(ks);
 
-	const float u = clamp(nuVal, 6e-3f, 1.f);
+	const float u = clamp(nuVal, 0.f, 1.f);
 #if defined(PARAM_ENABLE_MAT_GLOSSY2_ANISOTROPIC)
-	const float v = clamp(nvVal, 6e-3f, 1.f);
+	const float v = clamp(nvVal, 0.f, 1.f);
 	const float u2 = u * u;
 	const float v2 = v * v;
 	const float anisotropy = (u2 < v2) ? (1.f - u2 / v2) : (v2 / u2 - 1.f);
@@ -99,15 +99,11 @@ float3 Glossy2Material_ConstEvaluate(
 #endif
 
 	if (directPdfW) {
-		if (fixedDir.z < 0.f)
-			*directPdfW = fabs(sampledDir.z * M_1_PI_F);
-		else {
-			const float wCoating = SchlickBSDF_CoatingWeight(ks, fixedDir);
-			const float wBase = 1.f - wCoating;
+		const float wCoating = SchlickBSDF_CoatingWeight(ks, fixedDir);
+		const float wBase = 1.f - wCoating;
 
-			*directPdfW = wBase * fabs(sampledDir.z * M_1_PI_F) +
-				wCoating * SchlickBSDF_CoatingPdf(roughness, anisotropy, fixedDir, sampledDir);
-		}
+		*directPdfW = wBase * fabs(sampledDir.z * M_1_PI_F) +
+			wCoating * SchlickBSDF_CoatingPdf(roughness, anisotropy, fixedDir, sampledDir);
 	}
 
 #if defined(PARAM_ENABLE_MAT_GLOSSY2_ABSORPTION)
@@ -121,10 +117,6 @@ float3 Glossy2Material_ConstEvaluate(
 	const float3 absorption = WHITE;
 #endif
 
-	if (fixedDir.z < 0.f) {
-		// Backface, no coating
-		return baseF;
-	}
 	// Coating fresnel factor
 	const float3 H = normalize(fixedDir + sampledDir);
 	const float3 S = FresnelSchlick_Evaluate(ks, fabs(dot(sampledDir, H)));
@@ -190,9 +182,9 @@ float3 Glossy2Material_ConstSample(
 #endif
 	ks = Spectrum_Clamp(ks);
 
-	const float u = clamp(nuVal, 6e-3f, 1.f);
+	const float u = clamp(nuVal, 0.f, 1.f);
 #if defined(PARAM_ENABLE_MAT_GLOSSY2_ANISOTROPIC)
-	const float v = clamp(nvVal, 6e-3f, 1.f);
+	const float v = clamp(nvVal, 0.f, 1.f);
 	const float u2 = u * u;
 	const float v2 = v * v;
 	const float anisotropy = (u2 < v2) ? (1.f - u2 / v2) : (v2 / u2 - 1.f);
