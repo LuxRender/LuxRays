@@ -604,14 +604,14 @@ void TileRepository::Tile::UpdateMaxPixelValue() {
 			const float *pixel = allPassFilm->channel_RADIANCE_PER_PIXEL_NORMALIZEDs[j]->GetPixel(i);
 			if (pixel[3] > 0.f) {
 				const float w = 1.f / pixel[3];
-				maxVal = max(maxVal, pixel[0] * w);
-				maxVal = max(maxVal, pixel[1] * w);
-				maxVal = max(maxVal, pixel[2] * w);
+				maxVal = Max(maxVal, pixel[0] * w);
+				maxVal = Max(maxVal, pixel[1] * w);
+				maxVal = Max(maxVal, pixel[2] * w);
 			}
 		}
 	}
 
-	tileRepository->tileMaxPixelValue = max(tileRepository->tileMaxPixelValue, maxVal);
+	tileRepository->tileMaxPixelValue = Max(tileRepository->tileMaxPixelValue, maxVal);
 }
 
 void TileRepository::Tile::CheckConvergence() {
