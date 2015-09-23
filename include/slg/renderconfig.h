@@ -44,9 +44,12 @@ public:
 
 	Film *AllocFilm(FilmOutputs &filmOutputs) const;
 	Sampler *AllocSampler(luxrays::RandomGenerator *rndGen, Film *film,
+		const u_int threadIndex, const u_int threadCount,
 		double *metropolisSharedTotalLuminance, double *metropolisSharedSampleCount) const;
 	RenderEngine *AllocRenderEngine(Film *film, boost::mutex *filmMutex) const;
 
+	static ImagePipeline *AllocImagePipeline(const luxrays::Properties &prop);
+	static void SetRadianceGroupsScale(Film &film, const luxrays::Properties &props);
 	static const luxrays::Properties &GetDefaultProperties();
 
 	luxrays::Properties cfg;

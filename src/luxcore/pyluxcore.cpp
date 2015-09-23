@@ -1113,8 +1113,9 @@ BOOST_PYTHON_MODULE(pyluxcore) {
 		.def("WaitNewFrame", &RenderSession::WaitNewFrame)
 		.def("WaitForDone", &RenderSession::WaitForDone)
 		.def("HasDone", &RenderSession::HasDone)
+		.def("Parse", &RenderSession::Parse)
     ;
-	
+
 	//--------------------------------------------------------------------------
 	// Blender related functions
 	//--------------------------------------------------------------------------

@@ -123,7 +123,7 @@ Texture *Scene::CreateTexture(const string &texName, const Properties &props) {
 		const float v = props.Get(Property(propName + ".value")(1.f)).Get<float>();
 		return new ConstFloatTexture(v);
 	} else if (texType == "constfloat3") {
-		const Spectrum v = props.Get(Property(propName + ".value")(1.f)).Get<Spectrum>();
+		const Spectrum v = props.Get(Property(propName + ".value")(1.f, 1.f, 1.f)).Get<Spectrum>();
 		return new ConstFloat3Texture(v);
 	} else if (texType == "scale") {
 		const Texture *tex1 = GetTexture(props.Get(Property(propName + ".texture1")(1.f)));
@@ -372,7 +372,8 @@ Texture *Scene::CreateTexture(const string &texName, const Properties &props) {
 		}
 
 		const float resolution = props.Get(Property(propName + ".resolution")(5.f)).Get<float>();
-		return new IrregularDataTexture(waveLengths.size(), &waveLengths[0], &data[0], resolution);
+		const bool emission = props.Get(Property(propName + ".emission")(true)).Get<bool>();
+		return new IrregularDataTexture(waveLengths.size(), &waveLengths[0], &data[0], resolution, emission);
 	} else if (texType == "lampspectrum") {
 		return AllocLampSpectrumTex(props, propName);
 	} else if (texType == "fresnelcolor") {

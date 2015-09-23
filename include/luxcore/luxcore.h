@@ -800,6 +800,14 @@ public:
 	 */
 	const luxrays::Properties &GetStats() const;
 
+	/*!
+	 * \brief Dynamic edit the definition of RenderConfig properties
+	 *
+	 * \param props are the Properties with the definition of: film.imagepipeline.*,
+	 * film.radiancescales.*.
+	 */
+	void Parse(const luxrays::Properties &props);
+
 	friend class Film;
 
 private:

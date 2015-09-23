@@ -109,7 +109,6 @@ string BiasPathOCLRenderThread::AdditionalKernelOptions() {
 			" -D PARAM_TILE_WIDTH=" << engine->tileRepository->tileWidth <<
 			" -D PARAM_TILE_HEIGHT=" << engine->tileRepository->tileHeight <<
 			" -D PARAM_FIRST_VERTEX_DL_COUNT=" << engine->firstVertexLightSampleCount <<
-			" -D PARAM_RADIANCE_CLAMP_MAXVALUE=" << engine->radianceClampMaxValue << "f" <<
 			" -D PARAM_PDF_CLAMP_VALUE=" << engine->pdfClampValue << "f" <<
 			" -D PARAM_AA_SAMPLES=" << engine->aaSamples <<
 			" -D PARAM_DIRECT_LIGHT_SAMPLES=" << engine->directLightSamples <<
@@ -461,7 +460,7 @@ void BiasPathOCLRenderThread::RenderThreadImpl() {
 					//const u_int tileH = Min(engine->tileRepository->tileHeight, engine->film->GetHeight() - tiles[i]->yStart);
 					//SLG_LOG("[BiasPathOCLRenderThread::" << threadIndex << "] Tile: "
 					//		"(" << tiles[i]->xStart << ", " << tiles[i]->yStart << ") => " <<
-					//		"(" << tileW << ", " << tileH << ")");
+					//		"(" << tiles[i]->tileWidth << ", " << tiles[i]->tileWidth << ")");
 
 					threadFilms[i]->film->Reset();
 

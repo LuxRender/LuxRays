@@ -45,6 +45,7 @@
 #include "slg/film/imagepipeline/imagepipeline.h"
 #include "slg/film/framebuffer.h"
 #include "slg/utils/convtest/convtest.h"
+#include "slg/utils/varianceclamping.h"
 
 namespace slg {
 
@@ -111,6 +112,22 @@ public:
 		BY_MATERIAL_ID = 1<<20,
 		IRRADIANCE = 1<<21
 	} FilmChannelType;
+	
+	class RadianceChannelScale {
+	public:
+		RadianceChannelScale();
+
+		void Init();
+		void Scale(float v[3]) const;
+		luxrays::Spectrum Scale(const luxrays::Spectrum &v) const;
+
+		float globalScale, temperature;
+		luxrays::Spectrum rgbScale;
+		bool enabled;
+
+	private:
+		luxrays::Spectrum scale;
+	};
 
 	// Used by serialization
 	Film() { }
@@ -149,7 +166,10 @@ public:
 
 	// Note: used mostly for RT modes
 	void SetRGBTonemapUpdateFlag(const bool v) { rgbTonemapUpdate = v; }
-	void SetImagePipeline(ImagePipeline *ip) { imagePipeline = ip; }
+	void SetImagePipeline(ImagePipeline *ip) {
+		delete imagePipeline;
+		imagePipeline = ip;
+	}
 	const ImagePipeline *GetImagePipeline() const { return imagePipeline; }
 
 	void CopyDynamicSettings(const Film &film) {
@@ -157,13 +177,24 @@ public:
 		maskMaterialIDs = film.maskMaterialIDs;
 		byMaterialIDs = film.byMaterialIDs;
 		radianceGroupCount = film.radianceGroupCount;
+		radianceChannelScale = film.radianceChannelScale;
 		SetFilter(film.GetFilter() ? film.GetFilter()->Clone() : NULL);
 		SetRGBTonemapUpdateFlag(film.rgbTonemapUpdate);
 		SetImagePipeline(film.GetImagePipeline()->Copy());
 		SetOverlappedScreenBufferUpdateFlag(film.IsOverlappedScreenBufferUpdate());
 	}
 
+	void SetRadianceChannelScale(const u_int index, const RadianceChannelScale &scale);
+
 	//--------------------------------------------------------------------------
+
+	void VarianceClampFilm(const VarianceClamping &varianceClamping, const Film &film,
+		const u_int srcOffsetX, const u_int srcOffsetY,
+		const u_int srcWidth, const u_int srcHeight,
+		const u_int dstOffsetX, const u_int dstOffsetY);
+	void VarianceClampFilm(const VarianceClamping &varianceClamping, const Film &film) {
+		VarianceClampFilm(varianceClamping, film, 0, 0, width, height, 0, 0);
+	}
 
 	void AddFilm(const Film &film,
 		const u_int srcOffsetX, const u_int srcOffsetY,
@@ -278,6 +309,8 @@ private:
 	ConvergenceTest *convTest;
 	Filter *filter;
 	FilterLUTs *filterLUTs;
+
+	std::vector<RadianceChannelScale> radianceChannelScale;
 
 	bool initialized, enabledOverlappedScreenBufferUpdate, rgbTonemapUpdate;
 };

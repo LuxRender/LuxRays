@@ -16,6 +16,7 @@
  * limitations under the License.                                          *
  ***************************************************************************/
 
+#include <limits>
 #include <boost/format.hpp>
 #include <boost/thread/condition_variable.hpp>
 
@@ -25,6 +26,7 @@
 #include "slg/film/film.h"
 #include "slg/film/imagepipeline/plugins/gammacorrection.h"
 #include "slg/film/imagepipeline/plugins/tonemaps/linear.h"
+#include "slg/film/imagepipeline/plugins/tonemaps/autolinear.h"
 
 #include "luxrays/core/intersectiondevice.h"
 #if !defined(LUXRAYS_DISABLE_OPENCL)
@@ -495,8 +497,12 @@ void CPUNoTileRenderEngine::UpdateCounters() {
 //------------------------------------------------------------------------------
 
 TileRepository::Tile::Tile(TileRepository *repo, const Film &film, const u_int tileX, const u_int tileY) :
-			xStart(tileX), yStart(tileY), pass(0), done(false),
-			tileRepository(repo), allPassFilm(NULL), evenPassFilm(NULL) {
+			xStart(tileX), yStart(tileY), pass(0), error(numeric_limits<float>::infinity()),
+			done(false), tileRepository(repo), allPassFilm(NULL), evenPassFilm(NULL),
+			allPassFilmTotalYValue(0.f) {
+	tileWidth = Min(xStart + tileRepository->tileWidth, film.GetWidth()) - xStart;
+	tileHeight = Min(yStart + tileRepository->tileHeight, film.GetHeight()) - yStart;
+
 	if (tileRepository->enableMultipassRendering && (tileRepository->convergenceTestThreshold > 0.f)) {
 		InitTileFilm(film, &allPassFilm);
 		InitTileFilm(film, &evenPassFilm);
@@ -512,7 +518,7 @@ TileRepository::Tile::~Tile() {
 }
 
 void TileRepository::Tile::InitTileFilm(const Film &film, Film **tileFilm) {
-	(*tileFilm) = new Film(tileRepository->tileWidth, tileRepository->tileHeight);
+	(*tileFilm) = new Film(tileWidth, tileHeight);
 	(*tileFilm)->CopyDynamicSettings(film);
 	// Remove all channels but RADIANCE_PER_PIXEL_NORMALIZED and RGB_TONEMAPPED
 	(*tileFilm)->RemoveChannel(Film::ALPHA);
@@ -532,6 +538,7 @@ void TileRepository::Tile::InitTileFilm(const Film &film, Film **tileFilm) {
 	(*tileFilm)->RemoveChannel(Film::UV);
 	(*tileFilm)->RemoveChannel(Film::RAYCOUNT);
 	(*tileFilm)->RemoveChannel(Film::BY_MATERIAL_ID);
+	(*tileFilm)->RemoveChannel(Film::IRRADIANCE);
 
 	// Disable any kind of pixel filter
 	(*tileFilm)->SetFilter(NULL);
@@ -540,7 +547,7 @@ void TileRepository::Tile::InitTileFilm(const Film &film, Film **tileFilm) {
 	// gamma correction.
 	auto_ptr<ImagePipeline> imagePipeline(new ImagePipeline());
 	imagePipeline->AddPlugin(new LinearToneMap(1.f));
-	imagePipeline->AddPlugin(new GammaCorrectionPlugin(2.2f, 4096));
+	imagePipeline->AddPlugin(new GammaCorrectionPlugin(2.2f));
 	(*tileFilm)->SetImagePipeline(imagePipeline.release());
 
 	(*tileFilm)->Init();
@@ -553,7 +560,14 @@ void TileRepository::Tile::Restart() {
 		evenPassFilm->Reset();
 
 	pass = 0;
+	error = numeric_limits<float>::infinity();
+	hasEnoughWarmUpSample = false;
 	done = false;
+	allPassFilmTotalYValue = 0.f;
+}
+
+void TileRepository::Tile::VarianceClamp(Film &tileFilm) {
+	allPassFilm->VarianceClampFilm(tileRepository->varianceClamping, tileFilm);
 }
 
 void TileRepository::Tile::AddPass(const Film &tileFilm) {		
@@ -565,29 +579,27 @@ void TileRepository::Tile::AddPass(const Film &tileFilm) {
 		// Check if convergence test is enable
 		if (tileRepository->convergenceTestThreshold > 0.f) {
 			// Add the tile to the all pass film
-			allPassFilm->AddFilm(tileFilm,
-					0, 0,
-					tileFilm.GetWidth(),
-					tileFilm.GetHeight(),
-					0, 0);
+			allPassFilm->AddFilm(tileFilm);
+
+			if (!hasEnoughWarmUpSample) {
+				// Update tileRepository->filmTotalYValue and hasEnoughWarmUpSample
+				UpdateTileStats();
+			}
 
 			if (pass % 2 == 1) {
 				// If it is an odd pass, add also to the even pass film
-				evenPassFilm->AddFilm(tileFilm,
-					0, 0,
-					tileFilm.GetWidth(),
-					tileFilm.GetHeight(),
-					0, 0);
-			} else {
-				// Update tileRepository->tileMaxPixelValue before to check the
-				// convergence
-				UpdateMaxPixelValue();
-
+				evenPassFilm->AddFilm(tileFilm);
+			} else if (hasEnoughWarmUpSample) {
 				// Update linear tone mapping plugin
+
+				// This is the same scale of AutoLinearToneMap::CalcLinearToneMapScale() with gamma set to 1.0
+				const float scale = AutoLinearToneMap::CalcLinearToneMapScale(*allPassFilm,
+						tileRepository->filmTotalYValue / (tileRepository->filmWidth * tileRepository->filmHeight));
+
 				LinearToneMap *allLT = (LinearToneMap *)allPassFilm->GetImagePipeline()->GetPlugin(typeid(LinearToneMap));
-				allLT->scale = 1.f / tileRepository->tileMaxPixelValue;
+				allLT->scale = scale;
 				LinearToneMap *evenLT = (LinearToneMap *)evenPassFilm->GetImagePipeline()->GetPlugin(typeid(LinearToneMap));
-				evenLT->scale = allLT->scale;
+				evenLT->scale = scale;
 
 				// If it is an even pass, check convergence status
 				CheckConvergence();
@@ -600,22 +612,31 @@ void TileRepository::Tile::AddPass(const Film &tileFilm) {
 		done = true;
 }
 
-void TileRepository::Tile::UpdateMaxPixelValue() {
-	float maxVal = 0.f;
+void TileRepository::Tile::UpdateTileStats() {
+	float totalYValue = 0.f;
 	const size_t channelCount = allPassFilm->GetRadianceGroupCount();
-	for (u_int i = 0; i < tileRepository->tileWidth * tileRepository->tileHeight; ++i) {
-		for (u_int j = 0; j < channelCount; ++j) {
-			const float *pixel = allPassFilm->channel_RADIANCE_PER_PIXEL_NORMALIZEDs[j]->GetPixel(i);
-			if (pixel[3] > 0.f) {
-				const float w = 1.f / pixel[3];
-				maxVal = max(maxVal, pixel[0] * w);
-				maxVal = max(maxVal, pixel[1] * w);
-				maxVal = max(maxVal, pixel[2] * w);
+
+	hasEnoughWarmUpSample = true;
+	for (u_int j = 0; j < channelCount; ++j) {
+		for (u_int y = 0; y < tileHeight; ++y) {
+			for (u_int x = 0; x < tileWidth; ++x) {		
+				const float *pixel = allPassFilm->channel_RADIANCE_PER_PIXEL_NORMALIZEDs[j]->GetPixel(x, y);
+
+				if (pixel[3] > 0.f) {
+					if (pixel[3] < tileRepository->convergenceTestThreshold)
+						hasEnoughWarmUpSample = false;
+
+					const float w = 1.f / pixel[3];
+					totalYValue += Spectrum(pixel[0] * w, pixel[1] * w, pixel[2] * w).Y();
+				} else
+					hasEnoughWarmUpSample = false;
 			}
 		}
 	}
 
-	tileRepository->tileMaxPixelValue = max(tileRepository->tileMaxPixelValue, maxVal);
+	// Remove old avg. luminance value and the new one
+	tileRepository->filmTotalYValue += totalYValue - allPassFilmTotalYValue;
+	allPassFilmTotalYValue = totalYValue;
 }
 
 void TileRepository::Tile::CheckConvergence() {
@@ -631,8 +652,8 @@ void TileRepository::Tile::CheckConvergence() {
 
 	// Compare the pixels result only of even passes with the result
 	// of all passes
-	for (u_int y = 0; y < tileRepository->tileHeight; ++y) {
-		for (u_int x = 0; x < tileRepository->tileWidth; ++x) {
+	for (u_int y = 0; y < tileHeight; ++y) {
+		for (u_int x = 0; x < tileWidth; ++x) {
 			// This is an variance estimation as defined in:
 			//
 			// "Progressive Path Tracing with Lightweight Local Error Estimation" paper
@@ -650,7 +671,8 @@ void TileRepository::Tile::CheckConvergence() {
 				// where Pfull is the total pixel value while Peven is the value made
 				// only of even samples.
 
-				const float diff = allPassPixel->c[k] - evenPassPixel->c[k];
+				const float diff = Clamp(allPassPixel->c[k], 0.f, 1.f) -
+						Clamp(evenPassPixel->c[k], 0.f, 1.f);
 				// I'm using variance^2 to avoid a sqrtf())
 				//const float variance = diff *diff;
 				const float variance2 = fabsf(diff);
@@ -665,6 +687,8 @@ void TileRepository::Tile::CheckConvergence() {
 			++allPassPixel;
 		}
 	}
+
+	error = maxError2;
 	done = (maxError2 < tileRepository->convergenceTestThreshold);
 }
 
@@ -678,12 +702,13 @@ TileRepository::TileRepository(const u_int tileW, const u_int tileH) {
 
 	maxPassCount = 0;
 	enableMultipassRendering = false;
-	convergenceTestThreshold = .04f;
+	convergenceTestThreshold = 6.f / 256.f;
 	convergenceTestThresholdReduction = 0.f;
+	convergenceTestWarmUpSamples = 32;
 	enableRenderingDonePrint = true;
 
 	done = false;
-	tileMaxPixelValue = 0.f;
+	filmTotalYValue = 0.f;
 }
 
 TileRepository::~TileRepository() {
@@ -714,6 +739,7 @@ void TileRepository::Restart() {
 	}
 	
 	done = false;
+	filmTotalYValue = 0.f;
 }
 
 void TileRepository::GetPendingTiles(deque<const Tile *> &tiles) {
@@ -769,16 +795,17 @@ void TileRepository::HilberCurveTiles(
 }
 
 void TileRepository::InitTiles(const Film &film) {
-	const u_int width = film.GetWidth();
-	const u_int height = film.GetHeight();
-	const u_int n = RoundUp(width, tileWidth) / tileWidth;
-	const u_int m = RoundUp(height, tileHeight) / tileHeight;
+	filmWidth = film.GetWidth();
+	filmHeight = film.GetHeight();
+
+	const u_int n = RoundUp(filmWidth, tileWidth) / tileWidth;
+	const u_int m = RoundUp(filmHeight, tileHeight) / tileHeight;
 
 	HilberCurveTiles(film, RoundUpPow2(n * m),
 			0, 0,
 			0, tileHeight,
 			tileWidth, 0,
-			width, height);
+			filmWidth, filmHeight);
 
 	BOOST_FOREACH(Tile *tile, tileList)
 		todoTiles.push(tile);
@@ -816,12 +843,17 @@ bool TileRepository::GetToDoTile(Tile **tile) {
 }
 
 bool TileRepository::NextTile(Film *film, boost::mutex *filmMutex,
-		Tile **tile, const Film *tileFilm) {
+		Tile **tile, Film *tileFilm) {
 	// Now I have to lock the repository
 	boost::unique_lock<boost::mutex> lock(tileMutex);
 
 	// Check if I have to add the tile to the film
 	if (*tile) {
+		if (varianceClamping.hasClamping()) {
+			// Apply variance clamping
+			(*tile)->VarianceClamp(*tileFilm);
+		}
+
 		// Add the pass to the tile
 		(*tile)->AddPass(*tileFilm);
 

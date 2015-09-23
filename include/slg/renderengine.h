@@ -28,9 +28,9 @@
 #include "slg/slg.h"
 #include "slg/renderconfig.h"
 #include "slg/editaction.h"
-
 #include "slg/film/film.h"
 #include "slg/bsdf/bsdf.h"
+#include "slg/utils/varianceclamping.h"
 
 namespace slg {
 
@@ -250,30 +250,29 @@ public:
 		virtual ~Tile();
 
 		void Restart();
+		void VarianceClamp(Film &tileFilm);
 		void AddPass(const Film &tileFilm);
 		
 		// Read-only for every one but Tile/TileRepository classes
-		u_int xStart, yStart;
+		u_int xStart, yStart, tileWidth, tileHeight;
 		u_int pass;
+		float error;
 		bool done;
 
 	private:
 		void InitTileFilm(const Film &film, Film **tileFilm);
 		void CheckConvergence();
-		void UpdateMaxPixelValue();
+		void UpdateTileStats();
 
 		TileRepository *tileRepository;
 		Film *allPassFilm, *evenPassFilm;
+
+		float allPassFilmTotalYValue;
+		bool hasEnoughWarmUpSample;
 	};
 
 	TileRepository(const u_int tileWidth, const u_int tileHeight);
 	~TileRepository();
-
-	void HilberCurveTiles(
-		const Film &film,
-		const u_int n, const int xo, const int yo,
-		const int xd, const int yd, const int xp, const int yp,
-		const int xEnd, const int yEnd);
 
 	void Clear();
 	void Restart();
@@ -283,7 +282,7 @@ public:
 
 	void InitTiles(const Film &film);
 	bool NextTile(Film *film, boost::mutex *filmMutex,
-		Tile **tile, const Film *tileFilm);
+		Tile **tile, Film *tileFilm);
 
 	friend class Tile;
 
@@ -292,6 +291,8 @@ public:
 
 	u_int maxPassCount;
 	float convergenceTestThreshold, convergenceTestThresholdReduction;
+	u_int convergenceTestWarmUpSamples;
+	VarianceClamping varianceClamping;
 	bool enableMultipassRendering, enableRenderingDonePrint;
 
 	bool done;
@@ -304,13 +305,20 @@ private:
 		}
 	};
 
+	void HilberCurveTiles(
+		const Film &film,
+		const u_int n, const int xo, const int yo,
+		const int xd, const int yd, const int xp, const int yp,
+		const int xEnd, const int yEnd);
+
 	void SetDone();
 	bool GetToDoTile(Tile **tile);
 
 	boost::mutex tileMutex;
 	double startTime;
 
-	float tileMaxPixelValue; // Updated only if convergence test is enabled
+	u_int filmWidth, filmHeight;
+	float filmTotalYValue; // Updated only if convergence test is enabled
 
 	std::vector<Tile *> tileList;
 
