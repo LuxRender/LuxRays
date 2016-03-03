@@ -35,6 +35,7 @@
 using namespace std;
 using namespace luxrays;
 using namespace slg;
+OIIO_NAMESPACE_USING
 
 //------------------------------------------------------------------------------
 // ImageMapStorage

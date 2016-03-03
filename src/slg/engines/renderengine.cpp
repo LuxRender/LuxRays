@@ -59,18 +59,19 @@ RenderEngine::RenderEngine(const RenderConfig *cfg, Film *flm, boost::mutex *flm
 	GenerateNewSeed();
 
 	// Create LuxRays context
-	oclPlatformIndex = renderConfig->cfg.Get(Property("opencl.platform.index")(-1)).Get<int>();
-	ctx = new Context(LuxRays_DebugHandler ? LuxRays_DebugHandler : NullDebugHandler, oclPlatformIndex);
+	const Properties cfgProps = renderConfig->ToProperties();
+	ctx = new Context(LuxRays_DebugHandler ? LuxRays_DebugHandler : NullDebugHandler,
+			Properties() <<
+			cfgProps.Get("opencl.platform.index") <<
+			cfgProps.GetAllProperties("accelerator.") <<
+			cfgProps.GetAllProperties("context."));
 
 	// Force a complete preprocessing
 	renderConfig->scene->editActions.AddAllAction();
-	renderConfig->scene->Preprocess(ctx,
-			film->GetWidth(), film->GetHeight(), film->GetSubRegion(),
-			Accelerator::String2AcceleratorType(renderConfig->GetProperty("accelerator.type").Get<string>()),
-			renderConfig->GetProperty("accelerator.instances.enable").Get<bool>());
+	renderConfig->scene->Preprocess(ctx, film->GetWidth(), film->GetHeight(), film->GetSubRegion());
 
 	samplesCount = 0;
-	elapsedTime = 0.0f;
+	elapsedTime = 0.0;
 }
 
 RenderEngine::~RenderEngine() {
@@ -164,10 +165,7 @@ void RenderEngine::EndSceneEdit(const EditActionList &editActions) {
 		contextStopped = false;
 
 	// Pre-process scene data
-	renderConfig->scene->Preprocess(ctx,
-			film->GetWidth(), film->GetHeight(), film->GetSubRegion(),
-			Accelerator::String2AcceleratorType(renderConfig->GetProperty("accelerator.type").Get<string>()),
-			renderConfig->GetProperty("accelerator.instances.enable").Get<bool>());
+	renderConfig->scene->Preprocess(ctx, film->GetWidth(), film->GetHeight(), film->GetSubRegion());
 
 	if (contextStopped) {
 		// Set the LuxRays DataSet

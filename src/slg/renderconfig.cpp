@@ -373,9 +373,20 @@ const Properties &RenderConfig::ToProperties() const {
 Properties RenderConfig::ToProperties(const Properties &cfg) {
 	Properties props;
 
+	// LuxRays context
+	props << cfg.Get(Property("context.verbose")(true));
+
 	// Ray intersection accelerators
 	props << cfg.Get(Property("accelerator.type")("AUTO"));
 	props << cfg.Get(Property("accelerator.instances.enable")(true));
+	props << cfg.Get(Property("accelerator.motionblur.enable")(true));
+	// (M)BVH accelerator
+	props << cfg.Get(Property("accelerator.bvh.builder.type")("EMBREE_BINNED_SAH"));
+	props << cfg.Get(Property("accelerator.bvh.treetype")(4));
+	props << cfg.Get(Property("accelerator.bvh.costsamples")(0));
+	props << cfg.Get(Property("accelerator.bvh.isectcost")(80));
+	props << cfg.Get(Property("accelerator.bvh.travcost")(10));
+	props << cfg.Get(Property("accelerator.bvh.emptybonus")(.5));
 
 	// Scene epsilon
 	props << cfg.Get(Property("scene.epsilon.min")(DEFAULT_EPSILON_MIN));

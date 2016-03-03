@@ -1,3 +1,5 @@
+#line 2 "bvhbuild_types.cl"
+
 /***************************************************************************
  * Copyright 1998-2015 by authors (see AUTHORS.txt)                        *
  *                                                                         *
@@ -16,55 +18,25 @@
  * limitations under the License.                                          *
  ***************************************************************************/
 
-#ifndef _LUXRAYS_BVHACCEL_H
-#define	_LUXRAYS_BVHACCEL_H
-
-#include <vector>
-#include <boost/foreach.hpp>
-
-#include "luxrays/luxrays.h"
-#include "luxrays/core/accelerator.h"
-#include "luxrays/core/bvh/bvhbuild.h"
-
-namespace luxrays {
-
-// BVHAccel Declarations
-class BVHAccel : public Accelerator {
-public:
-	// BVHAccel Public Methods
-	BVHAccel(const Context *context);
-	virtual ~BVHAccel();
-
-	virtual AcceleratorType GetType() const { return ACCEL_BVH; }
-	virtual OpenCLKernels *NewOpenCLKernels(OpenCLIntersectionDevice *device,
-		const u_int kernelCount, const u_int stackSize) const;
-	virtual void Init(const std::deque<const Mesh *> &meshes,
-		const u_longlong totalVertexCount,
-		const u_longlong totalTriangleCount);
-
-	virtual bool Intersect(const Ray *ray, RayHit *hit) const;
-
-	static BVHParams ToBVHParams(const Properties &props);
-
-	friend class MBVHAccel;
-#if !defined(LUXRAYS_DISABLE_OPENCL)
-	friend class OpenCLBVHKernels;
-	friend class OpenCLMBVHKernels;
-#endif
-
-private:
-	BVHParams params;
-
-	u_int nNodes;
-	luxrays::ocl::BVHArrayNode *bvhTree;
-
-	const Context *ctx;
-	std::deque<const Mesh *> meshes;
-	u_longlong totalVertexCount, totalTriangleCount;
-
-	bool initialized;
-};
-
-}
-
-#endif	/* _LUXRAYS_BVHACCEL_H */
+typedef struct {
+	union {
+		struct {
+			// I can not use BBox here because objects with a constructor are not
+			// allowed inside an union.
+			float bboxMin[3];
+			float bboxMax[3];
+		} bvhNode;
+		struct {
+			unsigned int v[3];
+			unsigned int meshIndex, triangleIndex;
+		} triangleLeaf;
+		struct {
+			unsigned int leafIndex;
+			unsigned int transformIndex, motionIndex; // transformIndex or motionIndex have to be NULL_INDEX (i.e. only one can be used)
+			unsigned int meshOffsetIndex;
+		} bvhLeaf; // Used by MBVH
+	};
+	// Most significant bit is used to mark leafs
+	unsigned int nodeData;
+	int pad0; // To align to float4
+} BVHArrayNode;
