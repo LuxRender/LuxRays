@@ -950,15 +950,6 @@ void PathOCLBaseRenderThread::InitKernels() {
 				" -D PARAM_FILM_BY_OBJECT_ID=" << threadFilm->GetMaskObjectID(0);
 	}
 
-	if (normalsBuff)
-		ssParams << " -D PARAM_HAS_NORMALS_BUFFER";
-	if (uvsBuff)
-		ssParams << " -D PARAM_HAS_UVS_BUFFER";
-	if (colsBuff)
-		ssParams << " -D PARAM_HAS_COLS_BUFFER";
-	if (alphasBuff)
-		ssParams << " -D PARAM_HAS_ALPHAS_BUFFER";
-
 	if (cscene->IsTextureCompiled(CONST_FLOAT))
 		ssParams << " -D PARAM_ENABLE_TEX_CONST_FLOAT";
 	if (cscene->IsTextureCompiled(CONST_FLOAT3))
@@ -1143,35 +1134,33 @@ void PathOCLBaseRenderThread::InitKernels() {
 	if (cscene->enableCameraOculusRiftBarrel)
 		ssParams << " -D PARAM_CAMERA_ENABLE_OCULUSRIFT_BARREL";
 
-	if (renderEngine->compiledScene->lightTypeCounts[TYPE_IL] > 0)
+	if (renderEngine->compiledScene->IsLightSourceCompiled(TYPE_IL) > 0)
 		ssParams << " -D PARAM_HAS_INFINITELIGHT";
-	if (renderEngine->compiledScene->lightTypeCounts[TYPE_IL_CONSTANT] > 0)
+	if (renderEngine->compiledScene->IsLightSourceCompiled(TYPE_IL_CONSTANT) > 0)
 		ssParams << " -D PARAM_HAS_CONSTANTINFINITELIGHT";
-	if (renderEngine->compiledScene->lightTypeCounts[TYPE_IL_SKY] > 0)
+	if (renderEngine->compiledScene->IsLightSourceCompiled(TYPE_IL_SKY) > 0)
 		ssParams << " -D PARAM_HAS_SKYLIGHT";
-	if (renderEngine->compiledScene->lightTypeCounts[TYPE_IL_SKY2] > 0)
+	if (renderEngine->compiledScene->IsLightSourceCompiled(TYPE_IL_SKY2) > 0)
 		ssParams << " -D PARAM_HAS_SKYLIGHT2";
-	if (renderEngine->compiledScene->lightTypeCounts[TYPE_SUN] > 0)
+	if (renderEngine->compiledScene->IsLightSourceCompiled(TYPE_SUN) > 0)
 		ssParams << " -D PARAM_HAS_SUNLIGHT";
-	if (renderEngine->compiledScene->lightTypeCounts[TYPE_SHARPDISTANT] > 0)
+	if (renderEngine->compiledScene->IsLightSourceCompiled(TYPE_SHARPDISTANT) > 0)
 		ssParams << " -D PARAM_HAS_SHARPDISTANTLIGHT";
-	if (renderEngine->compiledScene->lightTypeCounts[TYPE_DISTANT] > 0)
+	if (renderEngine->compiledScene->IsLightSourceCompiled(TYPE_DISTANT) > 0)
 		ssParams << " -D PARAM_HAS_DISTANTLIGHT";
-	if (renderEngine->compiledScene->lightTypeCounts[TYPE_POINT] > 0)
+	if (renderEngine->compiledScene->IsLightSourceCompiled(TYPE_POINT) > 0)
 		ssParams << " -D PARAM_HAS_POINTLIGHT";
-	if (renderEngine->compiledScene->lightTypeCounts[TYPE_MAPPOINT] > 0)
+	if (renderEngine->compiledScene->IsLightSourceCompiled(TYPE_MAPPOINT) > 0)
 		ssParams << " -D PARAM_HAS_MAPPOINTLIGHT";
-	if (renderEngine->compiledScene->lightTypeCounts[TYPE_SPOT] > 0)
+	if (renderEngine->compiledScene->IsLightSourceCompiled(TYPE_SPOT) > 0)
 		ssParams << " -D PARAM_HAS_SPOTLIGHT";
-	if (renderEngine->compiledScene->lightTypeCounts[TYPE_PROJECTION] > 0)
+	if (renderEngine->compiledScene->IsLightSourceCompiled(TYPE_PROJECTION) > 0)
 		ssParams << " -D PARAM_HAS_PROJECTIONLIGHT";
-	if (renderEngine->compiledScene->lightTypeCounts[TYPE_LASER] > 0)
+	if (renderEngine->compiledScene->IsLightSourceCompiled(TYPE_LASER) > 0)
 		ssParams << " -D PARAM_HAS_LASERLIGHT";
-	if (renderEngine->compiledScene->lightTypeCounts[TYPE_TRIANGLE] > 0)
-		ssParams << " -D PARAM_HAS_AREALIGHT";
+	if (renderEngine->compiledScene->IsLightSourceCompiled(TYPE_TRIANGLE) > 0)
+		ssParams << " -D PARAM_HAS_TRIANGLELIGHT";
 
-	if (renderEngine->compiledScene->hasInfiniteLights)
-		ssParams << " -D PARAM_HAS_INFINITELIGHTS";
 	if (renderEngine->compiledScene->hasEnvLights)
 		ssParams << " -D PARAM_HAS_ENVLIGHTS";
 
@@ -1207,10 +1196,6 @@ void PathOCLBaseRenderThread::InitKernels() {
 		ssParams << " -D PARAM_HAS_VOLUMES";
 		ssParams << " -D SCENE_DEFAULT_VOLUME_INDEX=" << renderEngine->compiledScene->defaultWorldVolumeIndex;
 	}
-
-	// Some information about our place in the universe...
-	ssParams << " -D PARAM_DEVICE_INDEX=" << threadIndex;
-	ssParams << " -D PARAM_DEVICE_COUNT=" << renderEngine->intersectionDevices.size();
 
 	ssParams << " " << renderEngine->additionalKernelOptions;
 

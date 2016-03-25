@@ -73,18 +73,10 @@ __kernel __attribute__((work_group_size_hint(64, 1, 1))) void AdvancePaths_MK_RT
 			sceneObjs,
 			meshTriLightDefsOffset,
 			vertices,
-#if defined(PARAM_HAS_NORMALS_BUFFER)
 			vertNormals,
-#endif
-#if defined(PARAM_HAS_UVS_BUFFER)
 			vertUVs,
-#endif
-#if defined(PARAM_HAS_COLS_BUFFER)
 			vertCols,
-#endif
-#if defined(PARAM_HAS_ALPHAS_BUFFER)
 			vertAlphas,
-#endif
 			triangles
 			MATERIALS_PARAM
 			);
@@ -324,18 +316,10 @@ __kernel __attribute__((work_group_size_hint(64, 1, 1))) void AdvancePaths_MK_RT
 			sceneObjs,
 			meshTriLightDefsOffset,
 			vertices,
-#if defined(PARAM_HAS_NORMALS_BUFFER)
 			vertNormals,
-#endif
-#if defined(PARAM_HAS_UVS_BUFFER)
 			vertUVs,
-#endif
-#if defined(PARAM_HAS_COLS_BUFFER)
 			vertCols,
-#endif
-#if defined(PARAM_HAS_ALPHAS_BUFFER)
 			vertAlphas,
-#endif
 			triangles
 			MATERIALS_PARAM
 			);
@@ -461,9 +445,7 @@ __kernel __attribute__((work_group_size_hint(64, 1, 1))) void AdvancePaths_MK_DL
 			MATERIALS_PARAM) &&
 			DirectLight_Illuminate(
 				bsdf,
-#if defined(PARAM_HAS_INFINITELIGHTS)
 				worldCenterX, worldCenterY, worldCenterZ, worldRadius,
-#endif
 				&task->tmpHitPoint,
 				Sampler_GetSamplePathVertex(pathVertexCount, IDX_DIRECTLIGHT_X),
 				Sampler_GetSamplePathVertex(pathVertexCount, IDX_DIRECTLIGHT_Y),

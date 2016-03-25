@@ -164,18 +164,10 @@ __kernel __attribute__((work_group_size_hint(64, 1, 1))) void RenderSample_MK_TR
 		sceneObjs,
 		meshTriLightDefsOffset,
 		vertices,
-#if defined(PARAM_HAS_NORMALS_BUFFER)
 		vertNormals,
-#endif
-#if defined(PARAM_HAS_UVS_BUFFER)
 		vertUVs,
-#endif
-#if defined(PARAM_HAS_COLS_BUFFER)
 		vertCols,
-#endif
-#if defined(PARAM_HAS_ALPHAS_BUFFER)
 		vertAlphas,
-#endif
 		triangles
 		MATERIALS_PARAM
 		// Accelerator_Intersect parameters
@@ -403,9 +395,7 @@ __kernel __attribute__((work_group_size_hint(64, 1, 1))) void RenderSample_MK_DL
 			&taskDirectLight->directLightVolInfo,
 #endif
 			&task->tmpHitPoint,
-#if defined(PARAM_HAS_INFINITELIGHTS)
 			worldCenterX, worldCenterY, worldCenterZ, worldRadius,
-#endif
 			task->currentTime,
 			VLOAD3F(task->throughputPathVertex1.c),
 			&task->bsdfPathVertex1, &taskDirectLight->directLightBSDF,
@@ -414,18 +404,10 @@ __kernel __attribute__((work_group_size_hint(64, 1, 1))) void RenderSample_MK_DL
 			meshDescs,
 			sceneObjs,
 			vertices,
-#if defined(PARAM_HAS_NORMALS_BUFFER)
 			vertNormals,
-#endif
-#if defined(PARAM_HAS_UVS_BUFFER)
 			vertUVs,
-#endif
-#if defined(PARAM_HAS_COLS_BUFFER)
 			vertCols,
-#endif
-#if defined(PARAM_HAS_ALPHAS_BUFFER)
 			vertAlphas,
-#endif
 			triangles,
 			&lightsVisibility
 			// Accelerator_Intersect parameters
@@ -504,9 +486,7 @@ void RenderSample_MK_BSDF_SAMPLE(
 			&taskDirectLight->directLightVolInfo,
 #endif
 			&task->tmpHitPoint,
-#if defined(PARAM_HAS_INFINITELIGHTS)
 			worldCenterX, worldCenterY, worldCenterZ, worldRadius,
-#endif
 			task->currentTime,
 			vertex1SampleComponent,
 			sampleCount, VLOAD3F(task->throughputPathVertex1.c),
@@ -517,18 +497,10 @@ void RenderSample_MK_BSDF_SAMPLE(
 			meshDescs,
 			sceneObjs,
 			vertices,
-#if defined(PARAM_HAS_NORMALS_BUFFER)
 			vertNormals,
-#endif
-#if defined(PARAM_HAS_UVS_BUFFER)
 			vertUVs,
-#endif
-#if defined(PARAM_HAS_COLS_BUFFER)
 			vertCols,
-#endif
-#if defined(PARAM_HAS_ALPHAS_BUFFER)
 			vertAlphas,
-#endif
 			triangles
 			// Accelerator_Intersect parameters
 			ACCELERATOR_INTERSECT_PARAM
@@ -649,41 +621,27 @@ __kernel __attribute__((work_group_size_hint(64, 1, 1))) void RenderSample_MK_BS
 #endif
 			,
 			// Scene parameters
-#if defined(PARAM_HAS_INFINITELIGHTS)
 			worldCenterX,
 			worldCenterY,
 			worldCenterZ,
 			worldRadius,
-#endif
 			mats,
 			texs,
 			sceneObjs,
 			meshDescs,
 			vertices,
-#if defined(PARAM_HAS_NORMALS_BUFFER)
 			vertNormals,
-#endif
-#if defined(PARAM_HAS_UVS_BUFFER)
 			vertUVs,
-#endif
-#if defined(PARAM_HAS_COLS_BUFFER)
 			vertCols,
-#endif
-#if defined(PARAM_HAS_ALPHAS_BUFFER)
 			vertAlphas,
-#endif
 			triangles,
 			camera,
 			// Lights
 			lights,
-#if defined(PARAM_HAS_ENVLIGHTS)
 			envLightIndices,
 			envLightCount,
-#endif
 			meshTriLightDefsOffset,
-#if defined(PARAM_HAS_INFINITELIGHT)
 			infiniteLightDistribution,
-#endif
 			lightsDistribution,
 			infiniteLightSourcesDistribution
 			// Images
@@ -824,41 +782,27 @@ __kernel __attribute__((work_group_size_hint(64, 1, 1))) void RenderSample_MK_BS
 #endif
 			,
 			// Scene parameters
-#if defined(PARAM_HAS_INFINITELIGHTS)
 			worldCenterX,
 			worldCenterY,
 			worldCenterZ,
 			worldRadius,
-#endif
 			mats,
 			texs,
 			sceneObjs,
 			meshDescs,
 			vertices,
-#if defined(PARAM_HAS_NORMALS_BUFFER)
 			vertNormals,
-#endif
-#if defined(PARAM_HAS_UVS_BUFFER)
 			vertUVs,
-#endif
-#if defined(PARAM_HAS_COLS_BUFFER)
 			vertCols,
-#endif
-#if defined(PARAM_HAS_ALPHAS_BUFFER)
 			vertAlphas,
-#endif
 			triangles,
 			camera,
 			// Lights
 			lights,
-#if defined(PARAM_HAS_ENVLIGHTS)
 			envLightIndices,
 			envLightCount,
-#endif
 			meshTriLightDefsOffset,
-#if defined(PARAM_HAS_INFINITELIGHT)
 			infiniteLightDistribution,
-#endif
 			lightsDistribution,
 			infiniteLightSourcesDistribution
 			// Images
@@ -999,41 +943,27 @@ __kernel __attribute__((work_group_size_hint(64, 1, 1))) void RenderSample_MK_BS
 #endif
 			,
 			// Scene parameters
-#if defined(PARAM_HAS_INFINITELIGHTS)
 			worldCenterX,
 			worldCenterY,
 			worldCenterZ,
 			worldRadius,
-#endif
 			mats,
 			texs,
 			sceneObjs,
 			meshDescs,
 			vertices,
-#if defined(PARAM_HAS_NORMALS_BUFFER)
 			vertNormals,
-#endif
-#if defined(PARAM_HAS_UVS_BUFFER)
 			vertUVs,
-#endif
-#if defined(PARAM_HAS_COLS_BUFFER)
 			vertCols,
-#endif
-#if defined(PARAM_HAS_ALPHAS_BUFFER)
 			vertAlphas,
-#endif
 			triangles,
 			camera,
 			// Lights
 			lights,
-#if defined(PARAM_HAS_ENVLIGHTS)
 			envLightIndices,
 			envLightCount,
-#endif
 			meshTriLightDefsOffset,
-#if defined(PARAM_HAS_INFINITELIGHT)
 			infiniteLightDistribution,
-#endif
 			lightsDistribution,
 			infiniteLightSourcesDistribution
 			// Images
