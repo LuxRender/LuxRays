@@ -66,7 +66,7 @@
 #define VERTEX_SAMPLE_SIZE 7
 #endif
 
-#if (PARAM_SAMPLER_TYPE == 0) || (PARAM_SAMPLER_TYPE == 2)
+#if (PARAM_SAMPLER_TYPE == 0) || (PARAM_SAMPLER_TYPE == 2) || (PARAM_SAMPLER_TYPE == 3)
 #define TOTAL_U_SIZE 2
 #endif
 
@@ -106,6 +106,13 @@ typedef struct {
 	SampleResult result;
 } SobolSample;
 
+typedef struct {
+	// This filed is initialized inside Init() kernel and not inside Sampler_Init()
+	unsigned int currentTilePass;
+
+	SampleResult result;
+} BiasPathSample;
+
 #if (PARAM_SAMPLER_TYPE == 0)
 typedef RandomSample Sample;
 #endif
@@ -118,6 +125,11 @@ typedef MetropolisSample Sample;
 typedef SobolSample Sample;
 #endif
 
+// This is a special Sampler used by BIASPATHOCL
+#if (PARAM_SAMPLER_TYPE == 3)
+typedef BiasPathSample Sample;
+#endif
+
 #endif
 
 //------------------------------------------------------------------------------
@@ -127,7 +139,8 @@ typedef SobolSample Sample;
 typedef enum {
 	RANDOM = 0,
 	METROPOLIS = 1,
-	SOBOL = 2
+	SOBOL = 2,
+	BIASPATHSAMPLER = 3
 } SamplerType;
 
 typedef struct {

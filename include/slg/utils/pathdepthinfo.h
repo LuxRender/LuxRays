@@ -16,17 +16,26 @@
  * limitations under the License.                                          *
  ***************************************************************************/
 
-#ifndef _SLG_BIASPATHOCL_DATATYPES_H
-#define	_SLG_BIASPATHOCL_DATATYPES_H
-
-#if !defined(LUXRAYS_DISABLE_OPENCL)
+#ifndef _SLG_PATHDEPTHINFO_H
+#define	_SLG_PATHDEPTHINFO_H
 
 #include "slg/slg.h"
+#include "slg/bsdf/bsdf.h"
 
-namespace slg { namespace ocl { namespace biaspathocl {
-#include "slg/engines/biaspathocl/kernels/biaspathocl_datatypes.cl"
-} } }
+namespace slg {
 
-#endif
+class PathDepthInfo {
+public:
+	PathDepthInfo();
+	~PathDepthInfo() { }
 
-#endif	/* _SLG_BIASPATHOCL_DATATYPES_H */
+	void IncDepths(const BSDFEvent event);
+	bool IsLastPathVertex(const PathDepthInfo &maxPathDepth,
+		const BSDFEvent event) const;
+
+	u_int depth, diffuseDepth, glossyDepth, specularDepth;
+};
+
+}
+
+#endif	/* _SLG_PATHDEPTHINFO_H */

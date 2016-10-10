@@ -25,7 +25,6 @@
 #include "slg/film/imagepipeline/plugins/gammacorrection.h"
 #include "slg/film/imagepipeline/plugins/tonemaps/linear.h"
 #include "slg/engines/rtbiaspathocl/rtbiaspathocl.h"
-#include "slg/engines/biaspathocl/biaspathocl_datatypes.h"
 
 using namespace std;
 using namespace luxrays;
@@ -61,11 +60,7 @@ string RTBiasPathOCLRenderThread::AdditionalKernelOptions() {
 			BiasPathOCLRenderThread::AdditionalKernelOptions() <<
 			" -D PARAM_RTBIASPATHOCL_PREVIEW_RESOLUTION_REDUCTION=" << engine->previewResolutionReduction <<
 			" -D PARAM_RTBIASPATHOCL_PREVIEW_RESOLUTION_REDUCTION_STEP=" << engine->previewResolutionReductionStep <<
-			" -D PARAM_RTBIASPATHOCL_RESOLUTION_REDUCTION=" << engine->resolutionReduction <<
-			" -D PARAM_RTBIASPATHOCL_LONGRUN_RESOLUTION_REDUCTION=" << engine->longRunResolutionReduction <<
-			" -D PARAM_RTBIASPATHOCL_LONGRUN_RESOLUTION_REDUCTION_STEP=" << engine->longRunResolutionReductionStep;
-	if (engine->previewDirectLightOnly)
-		ss << " -D PARAM_RTBIASPATHOCL_PREVIEW_DL_ONLY";
+			" -D PARAM_RTBIASPATHOCL_RESOLUTION_REDUCTION=" << engine->resolutionReduction;
 
 	return ss.str();
 }
@@ -135,56 +130,14 @@ void RTBiasPathOCLRenderThread::UpdateOCLBuffers(const EditActionList &updateAct
 		// Execute initialization kernels. Initialize OpenCL structures.
 		// NOTE: I can only after having compiled and set arguments.
 		cl::CommandQueue &initQueue = intersectionDevice->GetOpenCLQueue();
-
 		RTBiasPathOCLRenderEngine *engine = (RTBiasPathOCLRenderEngine *)renderEngine;
+
 		initQueue.enqueueNDRangeKernel(*initSeedKernel, cl::NullRange,
-				cl::NDRange(RoundUp<u_int>(engine->taskCount, initSeedWorkGroupSize)),
-				cl::NDRange(initSeedWorkGroupSize));
+				cl::NDRange(engine->taskCount), cl::NDRange(initWorkGroupSize));
 	}
 
 	// Reset statistics in order to be more accurate
 	intersectionDevice->ResetPerformaceStats();
-}
-
-void RTBiasPathOCLRenderThread::EnqueueRenderSampleKernel(cl::CommandQueue &oclQueue) {
-	RTBiasPathOCLRenderEngine *engine = (RTBiasPathOCLRenderEngine *)renderEngine;
-
-	// Check the maximum number of task to execute. I have to
-	// consider preview, normal and long run phase
-	const u_int tileWidth = engine->tileRepository->tileWidth;
-	const u_int tileHeight = engine->tileRepository->tileHeight;
-	const u_int threadFilmPixelCount = tileWidth * tileHeight;
-
-	u_int taskCount = threadFilmPixelCount / (engine->previewResolutionReduction * engine->previewResolutionReduction);
-	taskCount = Max(taskCount, threadFilmPixelCount / (engine->resolutionReduction * engine->resolutionReduction));
-	if (engine->longRunResolutionReductionStep > 0)
-		taskCount = Max(taskCount, threadFilmPixelCount / (engine->longRunResolutionReduction * engine->longRunResolutionReduction));
-
-	// Micro kernels version
-	oclQueue.enqueueNDRangeKernel(*renderSampleKernel_MK_GENERATE_CAMERA_RAY, cl::NullRange,
-			cl::NDRange(RoundUp<u_int>(taskCount, renderSampleWorkGroupSize)),
-			cl::NDRange(renderSampleWorkGroupSize));
-	oclQueue.enqueueNDRangeKernel(*renderSampleKernel_MK_TRACE_EYE_RAY, cl::NullRange,
-			cl::NDRange(RoundUp<u_int>(taskCount, renderSampleWorkGroupSize)),
-			cl::NDRange(renderSampleWorkGroupSize));
-	oclQueue.enqueueNDRangeKernel(*renderSampleKernel_MK_ILLUMINATE_EYE_MISS, cl::NullRange,
-			cl::NDRange(RoundUp<u_int>(taskCount, renderSampleWorkGroupSize)),
-			cl::NDRange(renderSampleWorkGroupSize));
-	oclQueue.enqueueNDRangeKernel(*renderSampleKernel_MK_ILLUMINATE_EYE_HIT, cl::NullRange,
-			cl::NDRange(RoundUp<u_int>(taskCount, renderSampleWorkGroupSize)),
-			cl::NDRange(renderSampleWorkGroupSize));
-	oclQueue.enqueueNDRangeKernel(*renderSampleKernel_MK_DL_VERTEX_1, cl::NullRange,
-			cl::NDRange(RoundUp<u_int>(taskCount, renderSampleWorkGroupSize)),
-			cl::NDRange(renderSampleWorkGroupSize));
-	oclQueue.enqueueNDRangeKernel(*renderSampleKernel_MK_BSDF_SAMPLE_DIFFUSE, cl::NullRange,
-			cl::NDRange(RoundUp<u_int>(taskCount, renderSampleWorkGroupSize)),
-			cl::NDRange(renderSampleWorkGroupSize));
-	oclQueue.enqueueNDRangeKernel(*renderSampleKernel_MK_BSDF_SAMPLE_GLOSSY, cl::NullRange,
-			cl::NDRange(RoundUp<u_int>(taskCount, renderSampleWorkGroupSize)),
-			cl::NDRange(renderSampleWorkGroupSize));
-	oclQueue.enqueueNDRangeKernel(*renderSampleKernel_MK_BSDF_SAMPLE_SPECULAR, cl::NullRange,
-			cl::NDRange(RoundUp<u_int>(taskCount, renderSampleWorkGroupSize)),
-			cl::NDRange(renderSampleWorkGroupSize));
 }
 
 void RTBiasPathOCLRenderThread::RenderThreadImpl() {
@@ -200,9 +153,6 @@ void RTBiasPathOCLRenderThread::RenderThreadImpl() {
 	// To synchronize the start of all threads
 	frameBarrier->wait();
 
-	const u_int tileWidth = engine->tileRepository->tileWidth;
-	const u_int tileHeight = engine->tileRepository->tileHeight;
-	const u_int threadFilmPixelCount = tileWidth * tileHeight;
 	const u_int taskCount = engine->taskCount;
 
 	try {
@@ -214,8 +164,7 @@ void RTBiasPathOCLRenderThread::RenderThreadImpl() {
 
 		// Initialize OpenCL structures
 		initQueue.enqueueNDRangeKernel(*initSeedKernel, cl::NullRange,
-				cl::NDRange(RoundUp<u_int>(taskCount, initSeedWorkGroupSize)),
-				cl::NDRange(initSeedWorkGroupSize));
+				cl::NDRange(taskCount), cl::NDRange(initWorkGroupSize));
 
 		//----------------------------------------------------------------------
 		// Rendering loop
@@ -236,52 +185,21 @@ void RTBiasPathOCLRenderThread::RenderThreadImpl() {
 			// tile can be NULL after a scene edit
 			if (tile) {
 				//const double t0 = WallClockTime();
-				threadFilms[0]->film->Reset();
 				//SLG_LOG("[RTBiasPathOCLRenderThread::" << threadIndex << "] Tile: "
 				//		"(" << tile->xStart << ", " << tile->yStart << ") => " <<
 				//		"(" << tile->tileWidth << ", " << tile->tileHeight << ")");
 
-				// Clear the frame buffer
-				threadFilms[0]->ClearFilm(currentQueue, *filmClearKernel, filmClearWorkGroupSize);
-
-				// Initialize the statistics
-				currentQueue.enqueueNDRangeKernel(*initStatKernel, cl::NullRange,
-					cl::NDRange(RoundUp<u_int>(taskCount, initStatWorkGroupSize)),
-					cl::NDRange(initStatWorkGroupSize));
-
-				// Render the tile
-				UpdateKernelArgsForTile(tile, 0);
-
-				// Render all pixel samples
-				EnqueueRenderSampleKernel(currentQueue);
-
-				// Merge all pixel samples and accumulate statistics
-				currentQueue.enqueueNDRangeKernel(*mergePixelSamplesKernel, cl::NullRange,
-						cl::NDRange(RoundUp<u_int>(threadFilmPixelCount, mergePixelSamplesWorkGroupSize)),
-						cl::NDRange(mergePixelSamplesWorkGroupSize));
-
-				// Async. transfer of the Film buffers
-				threadFilms[0]->TransferFilm(currentQueue);
-				threadFilms[0]->film->AddSampleCount(taskCount);
+				RenderTile(tile, 0);
 
 				// Async. transfer of GPU task statistics
 				currentQueue.enqueueReadBuffer(
 					*(taskStatsBuff),
 					CL_FALSE,
 					0,
-					sizeof(slg::ocl::biaspathocl::GPUTaskStats) * engine->taskCount,
+					sizeof(slg::ocl::pathoclstatebase::GPUTaskStats) * taskCount,
 					gpuTaskStats);
 
 				currentQueue.finish();
-
-				// In order to update the statistics
-				u_int tracedRaysCount = 0;
-				// Statistics are accumulated by MergePixelSample kernel if not enableProgressiveRefinement
-				const u_int step = engine->aaSamples * engine->aaSamples;
-				for (u_int i = 0; i < taskCount; i += step)
-					tracedRaysCount += gpuTaskStats[i].raysCount;
-
-				intersectionDevice->IntersectionKernelExecuted(tracedRaysCount);
 
 				//const double t1 = WallClockTime();
 				//SLG_LOG("[RTBiasPathOCLRenderThread::" << threadIndex << "] Tile rendering time: " + ToString((u_int)((t1 - t0) * 1000.0)) + "ms");

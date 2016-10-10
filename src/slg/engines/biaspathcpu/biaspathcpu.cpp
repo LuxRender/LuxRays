@@ -124,8 +124,6 @@ void BiasPathCPURenderEngine::StartLockLess() {
 	pdfClampValue = Max(0.f, cfg.Get(GetDefaultProps().Get("biaspath.clamping.pdf.value")).Get<float>());
 
 	// Light settings
-	lowLightThreashold = Max(0.f, cfg.Get(GetDefaultProps().Get("biaspath.lights.lowthreshold")).Get<float>());
-	nearStartLight = Max(0.f, cfg.Get(GetDefaultProps().Get("biaspath.lights.nearstart")).Get<float>());
 	firstVertexLightSampleCount = Max(1, cfg.Get(GetDefaultProps().Get("biaspath.lights.firstvertexsamples")).Get<int>());
 
 	forceBlackBackground = cfg.Get(GetDefaultProps().Get("biaspath.forceblackbackground.enable")).Get<bool>();
@@ -196,32 +194,4 @@ const Properties &BiasPathCPURenderEngine::GetDefaultProps() {
 			Property("biaspath.forceblackbackground.enable")(false);
 
 	return props;
-}
-
-//------------------------------------------------------------------------------
-// PathDepthInfo
-//------------------------------------------------------------------------------
-
-PathDepthInfo::PathDepthInfo() {
-	depth = 0;
-	diffuseDepth = 0;
-	glossyDepth = 0;
-	specularDepth = 0;
-}
-
-void PathDepthInfo::IncDepths(const BSDFEvent event) {
-	++depth;
-	if (event & DIFFUSE)
-		++diffuseDepth;
-	if (event & GLOSSY)
-		++glossyDepth;
-	if (event & SPECULAR)
-		++specularDepth;
-}
-
-bool PathDepthInfo::IsLastPathVertex(const PathDepthInfo &maxPathDepth, const BSDFEvent possibleEvents) const {
-	return (depth + 1 == maxPathDepth.depth) ||
-			((possibleEvents & DIFFUSE) && (diffuseDepth + 1 == maxPathDepth.diffuseDepth)) ||
-			((possibleEvents & GLOSSY) && (glossyDepth + 1 == maxPathDepth.glossyDepth)) ||
-			((possibleEvents & SPECULAR) && (specularDepth + 1 == maxPathDepth.specularDepth));
 }

@@ -1,4 +1,4 @@
-#line 2 "pathocl_datatypes.cl"
+#line 2 "pathoclstatebase_datatypes.cl"
 
 /***************************************************************************
  * Copyright 1998-2015 by authors (see AUTHORS.txt)                        *
@@ -43,15 +43,8 @@
 //------------------------------------------------------------------------------
 
 typedef enum {
-	// Mega-kernel states
-	RT_NEXT_VERTEX = 0,
-	GENERATE_DL_RAY = 1,
-	RT_DL = 2,
-	GENERATE_NEXT_VERTEX_RAY = 3,
-	SPLAT_SAMPLE = 4,
-			
 	// Micro-kernel states
-	MK_RT_NEXT_VERTEX = 0, // Must have the same value of RT_NEXT_VERTEX
+	MK_RT_NEXT_VERTEX = 0,
 	MK_HIT_NOTHING = 1,
 	MK_HIT_OBJECT = 2,
 	MK_DL_ILLUMINATE = 3,
@@ -60,8 +53,13 @@ typedef enum {
 	MK_GENERATE_NEXT_VERTEX_RAY = 6,
 	MK_SPLAT_SAMPLE = 7,
 	MK_NEXT_SAMPLE = 8,
-	MK_GENERATE_CAMERA_RAY = 9
+	MK_GENERATE_CAMERA_RAY = 9,
+	MK_DONE = 10
 } PathState;
+
+typedef struct {
+	unsigned int depth, diffuseDepth, glossyDepth, specularDepth;
+} PathDepthInfo;
 
 typedef struct {
 	unsigned int lightIndex;	
@@ -86,7 +84,7 @@ typedef struct {
 // The state used to keep track of the rendered path
 typedef struct {
 	PathState state;
-	unsigned int pathVertexCount;
+	PathDepthInfo depthInfo;
 
 	Spectrum throughput;
 	BSDF bsdf; // Variable size structure

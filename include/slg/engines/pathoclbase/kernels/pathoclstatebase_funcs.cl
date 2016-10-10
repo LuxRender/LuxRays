@@ -1,4 +1,4 @@
-#line 2 "pathocl_funcs.cl"
+#line 2 "pathoclstatebase_funcs.cl"
 
 /***************************************************************************
  * Copyright 1998-2015 by authors (see AUTHORS.txt)                        *
@@ -20,6 +20,9 @@
 
 // List of symbols defined at compile time:
 //  PARAM_MAX_PATH_DEPTH
+//  PARAM_MAX_PATH_DEPTH_DIFFUSE
+//  PARAM_MAX_PATH_DEPTH_GLOSSY
+//  PARAM_MAX_PATH_DEPTH_SPECULAR
 //  PARAM_RR_DEPTH
 //  PARAM_RR_CAP
 
@@ -48,7 +51,7 @@
 
 // (optional)
 //  PARAM_USE_FAST_PIXEL_FILTER
-//  PARAM_SAMPLER_TYPE (0 = Inlined Random, 1 = Metropolis, 2 = Sobol)
+//  PARAM_SAMPLER_TYPE (0 = Inlined Random, 1 = Metropolis, 2 = Sobol, 3 = BiasPathSampler)
 // (Metropolis)
 //  PARAM_SAMPLER_METROPOLIS_LARGE_STEP_RATE
 //  PARAM_SAMPLER_METROPOLIS_MAX_CONSECUTIVE_REJECT
@@ -59,12 +62,85 @@
 //  PARAM_SAMPLER_SOBOL_RNG0
 //  PARAM_SAMPLER_SOBOL_RNG1
 
+//------------------------------------------------------------------------------
+// PathDepthInfo
+//------------------------------------------------------------------------------
+
+void PathDepthInfo_Init(__global PathDepthInfo *depthInfo) {
+	depthInfo->depth = 0;
+	depthInfo->diffuseDepth = 0;
+	depthInfo->glossyDepth = 0;
+	depthInfo->specularDepth = 0;
+}
+
+void PathDepthInfo_IncDepths(__global PathDepthInfo *depthInfo, const BSDFEvent event) {
+	++(depthInfo->depth);
+	if (event & DIFFUSE)
+		++(depthInfo->diffuseDepth);
+	if (event & GLOSSY)
+		++(depthInfo->glossyDepth);
+	if (event & SPECULAR)
+		++(depthInfo->specularDepth);
+}
+
+bool PathDepthInfo_IsLastPathVertex(__global PathDepthInfo *depthInfo, const BSDFEvent event) {
+	return (depthInfo->depth + 1 >= PARAM_MAX_PATH_DEPTH) ||
+			((event & DIFFUSE) && (depthInfo->diffuseDepth + 1 >= PARAM_MAX_PATH_DEPTH_DIFFUSE)) ||
+			((event & GLOSSY) && (depthInfo->glossyDepth + 1 >= PARAM_MAX_PATH_DEPTH_GLOSSY)) ||
+			((event & SPECULAR) && (depthInfo->specularDepth + 1 >= PARAM_MAX_PATH_DEPTH_SPECULAR));
+}
+
+bool PathDepthInfo_CheckComponentDepths(const BSDFEvent component) {
+	return ((component & DIFFUSE) && (PARAM_MAX_PATH_DEPTH_DIFFUSE > 0)) ||
+			((component & GLOSSY) && (PARAM_MAX_PATH_DEPTH_GLOSSY > 0)) ||
+			((component & SPECULAR) && (PARAM_MAX_PATH_DEPTH_SPECULAR > 0));
+}
 
 //------------------------------------------------------------------------------
 // Init Kernel
 //------------------------------------------------------------------------------
 
-void InitSampleResult(
+#if defined(RENDER_ENGINE_RTBIASPATHOCL)
+
+// Morton decode from https://fgiesen.wordpress.com/2009/12/13/decoding-morton-codes/
+
+// Inverse of Part1By1 - "delete" all odd-indexed bits
+
+uint Compact1By1(uint x) {
+	x &= 0x55555555;					// x = -f-e -d-c -b-a -9-8 -7-6 -5-4 -3-2 -1-0
+	x = (x ^ (x >> 1)) & 0x33333333;	// x = --fe --dc --ba --98 --76 --54 --32 --10
+	x = (x ^ (x >> 2)) & 0x0f0f0f0f;	// x = ---- fedc ---- ba98 ---- 7654 ---- 3210
+	x = (x ^ (x >> 4)) & 0x00ff00ff;	// x = ---- ---- fedc ba98 ---- ---- 7654 3210
+	x = (x ^ (x >> 8)) & 0x0000ffff;	// x = ---- ---- ---- ---- fedc ba98 7654 3210
+	return x;
+}
+
+// Inverse of Part1By2 - "delete" all bits not at positions divisible by 3
+
+uint Compact1By2(uint x) {
+	x &= 0x09249249;					// x = ---- 9--8 --7- -6-- 5--4 --3- -2-- 1--0
+	x = (x ^ (x >> 2)) & 0x030c30c3;	// x = ---- --98 ---- 76-- --54 ---- 32-- --10
+	x = (x ^ (x >> 4)) & 0x0300f00f;	// x = ---- --98 ---- ---- 7654 ---- ---- 3210
+	x = (x ^ (x >> 8)) & 0xff0000ff;	// x = ---- --98 ---- ---- ---- ---- 7654 3210
+	x = (x ^ (x >> 16)) & 0x000003ff;	// x = ---- ---- ---- ---- ---- --98 7654 3210
+	return x;
+}
+
+uint DecodeMorton2X(const uint code) {
+	return Compact1By1(code >> 0);
+}
+
+uint DecodeMorton2Y(const uint code) {
+	return Compact1By1(code >> 1);
+}
+
+#endif
+
+//------------------------------------------------------------------------------
+// Init Kernel
+//------------------------------------------------------------------------------
+
+bool InitSampleResult(
 		__global Sample *sample,
 		__global float *sampleData,
 		const uint filmWidth, const uint filmHeight,
@@ -73,30 +149,90 @@ void InitSampleResult(
 #if defined(PARAM_USE_FAST_PIXEL_FILTER)
 		, __global float *pixelFilterDistribution
 #endif
-		, Seed *seed) {
+		, Seed *seed
+#if defined(RENDER_ENGINE_BIASPATHOCL) || defined(RENDER_ENGINE_RTBIASPATHOCL)
+		, const uint tileStartX, const uint tileStartY
+		, const uint tileWidth, const uint tileHeight
+		, const uint tilePass
+		// aaSamples is always 1 in RENDER_ENGINE_RTBIASPATHOCL
+		, const uint aaSamples
+#endif
+		) {
 	SampleResult_Init(&sample->result);
 
-#if (PARAM_SAMPLER_TYPE == 1)
-	// Used by Sampler_GetSamplePath() macro
-	__global float *sampleDataPathBase = Sampler_GetSampleDataPathBase(sample, sampleData);
-#endif
+	const float u0 = Sampler_GetSamplePath(seed, sample, sampleData, IDX_SCREEN_X);
+	const float u1 = Sampler_GetSamplePath(seed, sample, sampleData, IDX_SCREEN_Y);
 
-	const float u0 = Sampler_GetSamplePath(IDX_SCREEN_X);
-	const float u1 = Sampler_GetSamplePath(IDX_SCREEN_Y);
+	uint pixelX, pixelY;
+	float uSubPixelX, uSubPixelY;
+#if defined(RENDER_ENGINE_RTBIASPATHOCL)
+	// Stratified sampling of the pixel
+	const size_t gid = get_global_id(0);
+
+	if (tilePass < PARAM_RTBIASPATHOCL_PREVIEW_RESOLUTION_REDUCTION_STEP) {
+		const uint samplesPerRow = filmWidth / PARAM_RTBIASPATHOCL_PREVIEW_RESOLUTION_REDUCTION;
+		const uint subPixelX = gid % samplesPerRow;
+		const uint subPixelY = gid / samplesPerRow;
+
+		pixelX = subPixelX * PARAM_RTBIASPATHOCL_PREVIEW_RESOLUTION_REDUCTION;
+		pixelY = subPixelY * PARAM_RTBIASPATHOCL_PREVIEW_RESOLUTION_REDUCTION;
+	} else {
+		const uint samplesPerRow = filmWidth / PARAM_RTBIASPATHOCL_RESOLUTION_REDUCTION;
+		const uint subPixelX = gid % samplesPerRow;
+		const uint subPixelY = gid / samplesPerRow;
+
+		pixelX = subPixelX * PARAM_RTBIASPATHOCL_RESOLUTION_REDUCTION;
+		pixelY = subPixelY * PARAM_RTBIASPATHOCL_RESOLUTION_REDUCTION;
+
+		const uint pixelsCount = PARAM_RTBIASPATHOCL_RESOLUTION_REDUCTION;
+		const uint pixelsCount2 = pixelsCount * pixelsCount;
+
+		// Rendering according a Morton curve
+		const pixelIndex = tilePass % pixelsCount2;
+		const uint mortonX = DecodeMorton2X(pixelIndex);
+		const uint mortonY = DecodeMorton2Y(pixelIndex);
+
+		pixelX += mortonX;
+		pixelY += mortonY;
+	}
+
+	if ((pixelX >= tileWidth) || (pixelY >= tileHeight))
+		return false;
+
+	uSubPixelX = u0;
+	uSubPixelY = u1;
+#elif defined(RENDER_ENGINE_BIASPATHOCL)
+	// Stratified sampling of the pixel
+	const size_t gid = get_global_id(0);
+
+	const uint samplesPerRow = filmWidth * aaSamples;
+	const uint subPixelX = gid % samplesPerRow;
+	const uint subPixelY = gid / samplesPerRow;
+	
+	pixelX = subPixelX / aaSamples;
+	pixelY = subPixelY / aaSamples;
+
+	if ((pixelX >= tileWidth) || (pixelY >= tileHeight))
+		return false;
+
+	uSubPixelX = u0;
+	uSubPixelY = u1;
+#else
 	float ux, uy;
 	Film_GetSampleXY(u0, u1, &ux, &uy,
 			filmWidth, filmHeight,
 			filmSubRegion0, filmSubRegion1,
 			filmSubRegion2, filmSubRegion3);
 
+	pixelX = Floor2UInt(ux);
+	pixelY = Floor2UInt(uy);	
+	uSubPixelX = ux - pixelX;
+	uSubPixelY = uy - pixelY;
+#endif
+
 #if defined(PARAM_USE_FAST_PIXEL_FILTER)
-	const uint pixelX = Floor2UInt(ux);
-	const uint pixelY = Floor2UInt(uy);
 	sample->result.pixelX = pixelX;
 	sample->result.pixelY = pixelY;
-
-	float uSubPixelX = ux - pixelX;
-	float uSubPixelY = uy - pixelY;
 
 	// Sample according the pixel filter distribution
 	float distX, distY;
@@ -105,12 +241,14 @@ void InitSampleResult(
 	sample->result.filmX = pixelX + .5f + distX;
 	sample->result.filmY = pixelY + .5f + distY;
 #else
-	sample->result.filmX = ux;
-	sample->result.filmY = uy;
+	sample->result.filmX = pixelX + uSubPixelX;
+	sample->result.filmY = pixelY + uSubPixelY;
 #endif
+	
+	return true;
 }
 
-void GenerateEyePath(
+bool GenerateEyePath(
 		__global GPUTaskDirectLight *taskDirectLight,
 		__global GPUTaskState *taskState,
 		__global Sample *sample,
@@ -119,62 +257,64 @@ void GenerateEyePath(
 		const uint filmWidth, const uint filmHeight,
 		const uint filmSubRegion0, const uint filmSubRegion1,
 		const uint filmSubRegion2, const uint filmSubRegion3,
+#if defined(RENDER_ENGINE_BIASPATHOCL) || defined(RENDER_ENGINE_RTBIASPATHOCL)
+		// cameraFilmWidth/cameraFilmHeight and filmWidth/filmHeight are usually
+		// the same. They are different when doing tile rendering
+		const uint cameraFilmWidth, const uint cameraFilmHeight,
+		const uint tileStartX, const uint tileStartY,
+		const uint tileWidth, const uint tileHeight,
+		const uint tilePass,
+		// aaSamples is always 1 in RENDER_ENGINE_RTBIASPATHOCL
+		const uint aaSamples,
+#endif
 #if defined(PARAM_USE_FAST_PIXEL_FILTER)
 		__global float *pixelFilterDistribution,
 #endif
 		__global Ray *ray,
 		Seed *seed) {
-#if (PARAM_SAMPLER_TYPE == 0)
-	const float time = Rnd_FloatValue(seed);
+	const float time = Sampler_GetSamplePath(seed, sample, sampleData, IDX_EYE_TIME);
 
-	const float dofSampleX = Rnd_FloatValue(seed);
-	const float dofSampleY = Rnd_FloatValue(seed);
-
-#if defined(PARAM_HAS_PASSTHROUGH)
-	const float eyePassThrough = Rnd_FloatValue(seed);
-#endif
-#endif
-
-#if (PARAM_SAMPLER_TYPE == 1)
-	__global float *sampleDataPathBase = Sampler_GetSampleDataPathBase(sample, sampleData);
-	
-	const float time = Sampler_GetSamplePath(IDX_EYE_TIME);
-
-	const float dofSampleX = Sampler_GetSamplePath(IDX_DOF_X);
-	const float dofSampleY = Sampler_GetSamplePath(IDX_DOF_Y);
+	const float dofSampleX = Sampler_GetSamplePath(seed, sample, sampleData, IDX_DOF_X);
+	const float dofSampleY = Sampler_GetSamplePath(seed, sample, sampleData, IDX_DOF_Y);
 
 #if defined(PARAM_HAS_PASSTHROUGH)
-	const float eyePassThrough = Sampler_GetSamplePath(IDX_EYE_PASSTHROUGH);
-#endif
-#endif
-
-#if (PARAM_SAMPLER_TYPE == 2)
-	const float time = Sampler_GetSamplePath(IDX_EYE_TIME);
-
-	const float dofSampleX = Sampler_GetSamplePath(IDX_DOF_X);
-	const float dofSampleY = Sampler_GetSamplePath(IDX_DOF_Y);
-
-#if defined(PARAM_HAS_PASSTHROUGH)
-	const float eyePassThrough = Sampler_GetSamplePath(IDX_EYE_PASSTHROUGH);
-#endif
+	const float eyePassThrough = Sampler_GetSamplePath(seed, sample, sampleData, IDX_EYE_PASSTHROUGH);
 #endif
 
-	InitSampleResult(sample, sampleData,
+	const bool validPixel = InitSampleResult(sample, sampleData,
 		filmWidth, filmHeight,
 		filmSubRegion0, filmSubRegion1,
 		filmSubRegion2, filmSubRegion3
 #if defined(PARAM_USE_FAST_PIXEL_FILTER)
 		, pixelFilterDistribution
 #endif
-		, seed);
+		, seed
+#if defined(RENDER_ENGINE_BIASPATHOCL) || defined(RENDER_ENGINE_RTBIASPATHOCL)
+		, tileStartX, tileStartY, tileWidth, tileHeight, tilePass
+		, aaSamples
+#endif
+		);
+	
+	if (!validPixel)
+		return false;
 
-	Camera_GenerateRay(camera, filmWidth, filmHeight,
-			ray, sample->result.filmX, sample->result.filmY, time,
+#if defined(RENDER_ENGINE_BIASPATHOCL) || defined(RENDER_ENGINE_RTBIASPATHOCL)
+	Camera_GenerateRay(camera, cameraFilmWidth, cameraFilmHeight,
+			ray,
+			sample->result.filmX + tileStartX, sample->result.filmY + tileStartY,
+			time,
 			dofSampleX, dofSampleY);
+#else
+	Camera_GenerateRay(camera, filmWidth, filmHeight,
+			ray,
+			sample->result.filmX, sample->result.filmY,
+			time,
+			dofSampleX, dofSampleY);
+#endif
 
 	// Initialize the path state
-	taskState->state = RT_NEXT_VERTEX; // Or MK_RT_NEXT_VERTEX (they have the same value)
-	taskState->pathVertexCount = 1;
+	taskState->state = MK_RT_NEXT_VERTEX;
+	PathDepthInfo_Init(&taskState->depthInfo);
 	VSTORE3F(WHITE, taskState->throughput.c);
 	taskDirectLight->lastBSDFEvent = SPECULAR; // SPECULAR is required to avoid MIS
 	taskDirectLight->lastPdfW = 1.f;
@@ -194,10 +334,28 @@ void GenerateEyePath(
 #endif
 
 	sample->result.lastPathVertex = (PARAM_MAX_PATH_DEPTH == 1);
+
+	return true;
+}
+
+__kernel __attribute__((work_group_size_hint(64, 1, 1))) void InitSeed(__global GPUTask *tasks,
+		const uint seedBase) {
+	const size_t gid = get_global_id(0);
+
+	// Initialize random number generator
+
+	Seed seed;
+	Rnd_Init(seedBase + gid, &seed);
+
+	// Save the seed
+	__global GPUTask *task = &tasks[gid];
+	task->seed = seed;
 }
 
 __kernel __attribute__((work_group_size_hint(64, 1, 1))) void Init(
-		uint seedBase,
+		const uint filmWidth, const uint filmHeight,
+		const uint filmSubRegion0, const uint filmSubRegion1,
+		const uint filmSubRegion2, const uint filmSubRegion3,
 		__global GPUTask *tasks,
 		__global GPUTaskDirectLight *tasksDirectLight,
 		__global GPUTaskState *tasksState,
@@ -211,41 +369,74 @@ __kernel __attribute__((work_group_size_hint(64, 1, 1))) void Init(
 		__global float *pixelFilterDistribution,
 #endif
 		__global Ray *rays,
-		__global Camera *camera,
-		const uint filmWidth, const uint filmHeight,
-		const uint filmSubRegion0, const uint filmSubRegion1,
-		const uint filmSubRegion2, const uint filmSubRegion3
+		__global Camera *camera
+#if defined(RENDER_ENGINE_BIASPATHOCL) || defined(RENDER_ENGINE_RTBIASPATHOCL)
+		// cameraFilmWidth/cameraFilmHeight and filmWidth/filmHeight are usually
+		// the same. They are different when doing tile rendering
+		, const uint cameraFilmWidth, const uint cameraFilmHeight
+		, const uint tileStartX, const uint tileStartY
+		, const uint tileWidth, const uint tileHeight
+		, const uint tilePass, const uint aaSamples
+#endif
 		) {
 	const size_t gid = get_global_id(0);
+
+	__global GPUTaskState *taskState = &tasksState[gid];
+
+#if defined(RENDER_ENGINE_BIASPATHOCL) || defined(RENDER_ENGINE_RTBIASPATHOCL)
+	if (gid >= filmWidth * filmHeight * aaSamples * aaSamples) {
+		taskState->state = MK_DONE;
+		return;
+	}
+#endif
 
 	// Initialize the task
 	__global GPUTask *task = &tasks[gid];
 	__global GPUTaskDirectLight *taskDirectLight = &tasksDirectLight[gid];
-	__global GPUTaskState *taskState = &tasksState[gid];
 
-	// Initialize random number generator
-	Seed seed;
-	Rnd_Init(seedBase + gid, &seed);
+	// Read the seed
+	Seed seedValue = task->seed;
+	// This trick is required by Sampler_GetSample() macro
+	Seed *seed = &seedValue;
 
 	// Initialize the sample and path
 	__global Sample *sample = &samples[gid];
 	__global float *sampleData = Sampler_GetSampleData(sample, samplesData);
-	Sampler_Init(&seed, sample, sampleData);
-	GenerateEyePath(taskDirectLight, taskState, sample, sampleData, camera,
+	Sampler_Init(seed, sample, sampleData);
+#if defined(RENDER_ENGINE_BIASPATHOCL) || defined(RENDER_ENGINE_RTBIASPATHOCL)
+	sample->currentTilePass = tilePass;
+#endif
+
+	// Generate the eye path
+	const bool validPath = GenerateEyePath(taskDirectLight, taskState, sample, sampleData, camera,
 			filmWidth, filmHeight,
 			filmSubRegion0, filmSubRegion1, filmSubRegion2, filmSubRegion3,
+#if defined(RENDER_ENGINE_BIASPATHOCL) || defined(RENDER_ENGINE_RTBIASPATHOCL)
+			cameraFilmWidth, cameraFilmHeight,
+			tileStartX, tileStartY, tileWidth, tileHeight, tilePass,
+			aaSamples,
+#endif
 #if defined(PARAM_USE_FAST_PIXEL_FILTER)
 			pixelFilterDistribution,
 #endif
-			&rays[gid], &seed);
+			&rays[gid], seed);
 
 	// Save the seed
-	task->seed.s1 = seed.s1;
-	task->seed.s2 = seed.s2;
-	task->seed.s3 = seed.s3;
+	task->seed = seedValue;
 
 	__global GPUTaskStats *taskStat = &taskStats[gid];
 	taskStat->sampleCount = 0;
+
+	if (!validPath) {
+#if defined(RENDER_ENGINE_BIASPATHOCL) || defined(RENDER_ENGINE_RTBIASPATHOCL)
+		taskState->state = MK_DONE;
+#else
+		taskState->state = MK_GENERATE_CAMERA_RAY;
+#endif
+		// Mark the ray like like one to NOT trace
+		rays[gid].flags = RAY_FLAGS_MASKED;
+		return;
+	}
 
 #if defined(PARAM_HAS_VOLUMES)
 	PathVolumeInfo_Init(&pathVolInfos[gid]);

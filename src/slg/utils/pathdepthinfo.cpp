@@ -16,17 +16,37 @@
  * limitations under the License.                                          *
  ***************************************************************************/
 
-#ifndef _SLG_PATHOCL_DATATYPES_H
-#define	_SLG_PATHOCL_DATATYPES_H
+#include "slg/utils/pathdepthinfo.h"
+#include "slg/film/sampleresult.h"
 
-#if !defined(LUXRAYS_DISABLE_OPENCL)
+using namespace std;
+using namespace luxrays;
+using namespace slg;
 
-#include "slg/slg.h"
+//------------------------------------------------------------------------------
+// PathDepthInfo
+//------------------------------------------------------------------------------
 
-namespace slg { namespace ocl { namespace pathocl {
-#include "slg/engines/pathocl/kernels/pathocl_datatypes.cl"
-} } }
+PathDepthInfo::PathDepthInfo() {
+	depth = 0;
+	diffuseDepth = 0;
+	glossyDepth = 0;
+	specularDepth = 0;
+}
 
-#endif
+void PathDepthInfo::IncDepths(const BSDFEvent event) {
+	++depth;
+	if (event & DIFFUSE)
+		++diffuseDepth;
+	if (event & GLOSSY)
+		++glossyDepth;
+	if (event & SPECULAR)
+		++specularDepth;
+}
 
-#endif	/* _SLG_OCLDATATYPES_H */
+bool PathDepthInfo::IsLastPathVertex(const PathDepthInfo &maxPathDepth, const BSDFEvent possibleEvents) const {
+	return (depth + 1 >= maxPathDepth.depth) ||
+			((possibleEvents & DIFFUSE) && (diffuseDepth + 1 >= maxPathDepth.diffuseDepth)) ||
+			((possibleEvents & GLOSSY) && (glossyDepth + 1 >= maxPathDepth.glossyDepth)) ||
+			((possibleEvents & SPECULAR) && (specularDepth + 1 >= maxPathDepth.specularDepth));
+}

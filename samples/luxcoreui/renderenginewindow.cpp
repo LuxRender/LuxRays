@@ -136,13 +136,34 @@ void RenderEngineWindow::PathGUI(Properties &props, bool &modifiedProps) {
 	float fval;
 	int ival;
 
-	if (ImGui::CollapsingHeader("Path Depth", NULL, true, true)) {
-		ival = props.Get("path.maxdepth").Get<int>();
-		if (ImGui::InputInt("Maximum recursion depth", &ival)) {
-			props.Set(Property("path.maxdepth")(ival));
+	if (ImGui::CollapsingHeader("Path Bounces", NULL, true, true)) {
+		ival = props.Get("path.pathdepth.total").Get<int>();
+		if (ImGui::InputInt("Total maximum recursion bounces", &ival)) {
+			props.Set(Property("path.pathdepth.total")(ival));
 			modifiedProps = true;
 		}
-		LuxCoreApp::HelpMarker("path.maxdepth");
+		LuxCoreApp::HelpMarker("path.pathdepth.total");
+
+		ival = props.Get("path.pathdepth.diffuse").Get<int>();
+		if (ImGui::InputInt("Total maximum diffuse recursion bounces", &ival)) {
+			props.Set(Property("path.pathdepth.diffuse")(ival));
+			modifiedProps = true;
+		}
+		LuxCoreApp::HelpMarker("path.pathdepth.diffuse");
+
+		ival = props.Get("path.pathdepth.glossy").Get<int>();
+		if (ImGui::InputInt("Total maximum glossy recursion bounces", &ival)) {
+			props.Set(Property("path.pathdepth.glossy")(ival));
+			modifiedProps = true;
+		}
+		LuxCoreApp::HelpMarker("path.pathdepth.glossy");
+
+		ival = props.Get("path.pathdepth.specular").Get<int>();
+		if (ImGui::InputInt("Total maximum specular recursion bounces", &ival)) {
+			props.Set(Property("path.pathdepth.specular")(ival));
+			modifiedProps = true;
+		}
+		LuxCoreApp::HelpMarker("path.pathdepth.specular");
 	}
 
 	if (ImGui::CollapsingHeader("Russian Roulette", NULL, true, true)) {
@@ -195,7 +216,7 @@ void RenderEngineWindow::PathGUI(Properties &props, bool &modifiedProps) {
 	}
 }
 
-void RenderEngineWindow::BiasPathGUI(Properties &props, bool &modifiedProps, const bool rtMode) {
+void RenderEngineWindow::BiasPathGUI(Properties &props, bool &modifiedProps, const bool cpuMode, const bool rtMode) {
 	bool bval;
 	float fval;
 	int ival;
@@ -230,7 +251,7 @@ void RenderEngineWindow::BiasPathGUI(Properties &props, bool &modifiedProps, con
 		LuxCoreApp::HelpMarker("biaspath.pathdepth.specular");
 	}
 
-	if (ImGui::CollapsingHeader("Sampling", NULL, true, true)) {
+	if (!rtMode && ImGui::CollapsingHeader("Sampling", NULL, true, true)) {
 		ival = props.Get("biaspath.sampling.aa.size").Get<int>();
 		if (ImGui::InputInt(("x" + ToString(ival) + " Anti-aliasing").c_str(), &ival)) {
 			props.Set(Property("biaspath.sampling.aa.size")(ival));
@@ -238,33 +259,35 @@ void RenderEngineWindow::BiasPathGUI(Properties &props, bool &modifiedProps, con
 		}
 		LuxCoreApp::HelpMarker("biaspath.sampling.aa.size");
 
-		ival = props.Get("biaspath.sampling.diffuse.size").Get<int>();
-		if (ImGui::InputInt(("x" + ToString(ival) + " Diffuse samples").c_str(), &ival)) {
-			props.Set(Property("biaspath.sampling.diffuse.size")(ival));
-			modifiedProps = true;
-		}
-		LuxCoreApp::HelpMarker("biaspath.sampling.diffuse.size");
+		if (cpuMode) {
+			ival = props.Get("biaspath.sampling.diffuse.size").Get<int>();
+			if (ImGui::InputInt(("x" + ToString(ival) + " Diffuse samples").c_str(), &ival)) {
+				props.Set(Property("biaspath.sampling.diffuse.size")(ival));
+				modifiedProps = true;
+			}
+			LuxCoreApp::HelpMarker("biaspath.sampling.diffuse.size");
 
-		ival = props.Get("biaspath.sampling.glossy.size").Get<int>();
-		if (ImGui::InputInt(("x" + ToString(ival) + " Glossy samples").c_str(), &ival)) {
-			props.Set(Property("biaspath.sampling.glossy.size")(ival));
-			modifiedProps = true;
-		}
-		LuxCoreApp::HelpMarker("biaspath.sampling.glossy.size");
+			ival = props.Get("biaspath.sampling.glossy.size").Get<int>();
+			if (ImGui::InputInt(("x" + ToString(ival) + " Glossy samples").c_str(), &ival)) {
+				props.Set(Property("biaspath.sampling.glossy.size")(ival));
+				modifiedProps = true;
+			}
+			LuxCoreApp::HelpMarker("biaspath.sampling.glossy.size");
 
-		ival = props.Get("biaspath.sampling.specular.size").Get<int>();
-		if (ImGui::InputInt(("x" + ToString(ival) + " Specular samples").c_str(), &ival)) {
-			props.Set(Property("biaspath.sampling.specular.size")(ival));
-			modifiedProps = true;
-		}
-		LuxCoreApp::HelpMarker("biaspath.sampling.specular.size");
+			ival = props.Get("biaspath.sampling.specular.size").Get<int>();
+			if (ImGui::InputInt(("x" + ToString(ival) + " Specular samples").c_str(), &ival)) {
+				props.Set(Property("biaspath.sampling.specular.size")(ival));
+				modifiedProps = true;
+			}
+			LuxCoreApp::HelpMarker("biaspath.sampling.specular.size");
 
-		ival = props.Get("biaspath.sampling.directlight.size").Get<int>();
-		if (ImGui::InputInt(("x" + ToString(ival) + " Direct light samples").c_str(), &ival)) {
-			props.Set(Property("biaspath.sampling.directlight.size")(ival));
-			modifiedProps = true;
+			ival = props.Get("biaspath.sampling.directlight.size").Get<int>();
+			if (ImGui::InputInt(("x" + ToString(ival) + " Direct light samples").c_str(), &ival)) {
+				props.Set(Property("biaspath.sampling.directlight.size")(ival));
+				modifiedProps = true;
+			}
+			LuxCoreApp::HelpMarker("biaspath.sampling.directlight.size");
 		}
-		LuxCoreApp::HelpMarker("biaspath.sampling.directlight.size");
 	}
 
 	if (ImGui::CollapsingHeader("Clamping", NULL, true, true)) {
@@ -284,21 +307,7 @@ void RenderEngineWindow::BiasPathGUI(Properties &props, bool &modifiedProps, con
 		LuxCoreApp::HelpMarker("biaspath.clamping.pdf.value");
 	}
 
-	if (ImGui::CollapsingHeader("Lights", NULL, true, true)) {
-		fval = props.Get("biaspath.lights.lowthreshold").Get<float>();
-		if (ImGui::InputFloat("Light low intensity threshold", &fval)) {
-			props.Set(Property("biaspath.lights.lowthreshold")(fval));
-			modifiedProps = true;
-		}
-		LuxCoreApp::HelpMarker("biaspath.lights.lowthreshold");
-
-		fval = props.Get("biaspath.lights.nearstart").Get<float>();
-		if (ImGui::InputFloat("Light distance threshold", &fval)) {
-			props.Set(Property("biaspath.lights.nearstart")(fval));
-			modifiedProps = true;
-		}
-		LuxCoreApp::HelpMarker("biaspath.lights.nearstart");
-
+	if (cpuMode && ImGui::CollapsingHeader("Lights", NULL, true, true)) {
 		ival = props.Get("biaspath.lights.firstvertexsamples").Get<int>();
 		if (ImGui::InputInt("First hit direct light samples", &ival)) {
 			props.Set(Property("biaspath.lights.firstvertexsamples")(ival));
@@ -415,7 +424,7 @@ void RenderEngineWindow::PathOCLGUI(Properties &props, bool &modifiedProps) {
 }
 
 void RenderEngineWindow::BiasPathOCLGUI(Properties &props, bool &modifiedProps, const bool rtMode) {
-	BiasPathGUI(props, modifiedProps, rtMode);
+	BiasPathGUI(props, modifiedProps, false, rtMode);
 
 	if (!rtMode && ImGui::CollapsingHeader("OpenCL Options", NULL, true, true)) {
 		int ival;
@@ -524,18 +533,11 @@ bool RenderEngineWindow::DrawObjectGUI(Properties &props, bool &modifiedProps) {
 			LuxCoreApp::HelpMarker("rtpath.resolutionreduction.preview");
 
 			ival = props.Get("rtpath.resolutionreduction.preview.step").Get<int>();
-			if (ImGui::SliderInt("Resolution preview length", &ival, 1, 32)) {
+			if (ImGui::SliderInt("Resolution preview length", &ival, 1, 64)) {
 				props.Set(Property("rtpath.resolutionreduction.preview.step")(ival));
 				modifiedProps = true;
 			}
 			LuxCoreApp::HelpMarker("rtpath.resolutionreduction.preview.step");
-
-			bool bval = props.Get("rtpath.resolutionreduction.preview.dlonly.enable").Get<float>();
-			if (ImGui::Checkbox("Use direct light sampling only on preview", &bval)) {
-				props.Set(Property("rtpath.resolutionreduction.preview.dlonly.enable")(bval));
-				modifiedProps = true;
-			}
-			LuxCoreApp::HelpMarker("rtpath.resolutionreduction.preview.dlonly.enable");
 
 			// Normal phase
 
@@ -546,23 +548,6 @@ bool RenderEngineWindow::DrawObjectGUI(Properties &props, bool &modifiedProps) {
 				modifiedProps = true;
 			}
 			LuxCoreApp::HelpMarker("rtpath.resolutionreduction");
-
-			// Long run phase
-
-			ival = props.Get("rtpath.resolutionreduction.longrun").Get<int>();
-			if (ImGui::SliderInt("Resolution long run zoom", &ival, 16, 128)) {
-				ival = RoundUpPow2(ival);
-				props.Set(Property("rtpath.resolutionreduction.longrun")(ival));
-				modifiedProps = true;
-			}
-			LuxCoreApp::HelpMarker("rtpath.resolutionreduction.longrun");
-
-			ival = props.Get("rtpath.resolutionreduction.longrun.step").Get<int>();
-			if (ImGui::SliderInt("Resolution long run length", &ival, 0, 32)) {
-				props.Set(Property("rtpath.resolutionreduction.longrun.step")(ival));
-				modifiedProps = true;
-			}
-			LuxCoreApp::HelpMarker("rtpath.resolutionreduction.longrun.step");
 		}
 
 		if (ImGui::Button("Open Pixel Filter editor"))
@@ -591,7 +576,7 @@ bool RenderEngineWindow::DrawObjectGUI(Properties &props, bool &modifiedProps) {
 	//--------------------------------------------------------------------------
 
 	if (typeIndex == typeTable.GetVal("BIASPATHCPU")) {
-		BiasPathGUI(props, modifiedProps, false);
+		BiasPathGUI(props, modifiedProps, false, false);
 		ThreadsGUI(props, modifiedProps);
 
 		if (ImGui::Button("Open Pixel Filter editor"))

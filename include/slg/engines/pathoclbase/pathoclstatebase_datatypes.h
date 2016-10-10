@@ -1,5 +1,3 @@
-#line 2 "ray_types.cl"
-
 /***************************************************************************
  * Copyright 1998-2015 by authors (see AUTHORS.txt)                        *
  *                                                                         *
@@ -18,19 +16,17 @@
  * limitations under the License.                                          *
  ***************************************************************************/
 
-#define RAY_FLAGS_NONE   0x00000000
-#define RAY_FLAGS_MASKED 0x00000001
+#ifndef _SLG_PATHOCLSTATEBASE_DATATYPES_H
+#define	_SLG_PATHOCLSTATEBASE_DATATYPES_H
 
-typedef struct {
-	Point o;
-	Vector d;
-	float mint, maxt, time;
+#if !defined(LUXRAYS_DISABLE_OPENCL)
 
-	unsigned int flags;
-	float pad[2]; // Add padding to avoid size discrepancies between OpenCL and C++
-} Ray;
+#include "slg/slg.h"
 
-typedef struct {
-	float t, b1, b2;
-	unsigned int meshIndex, triangleIndex;
-} RayHit;
+namespace slg { namespace ocl { namespace pathoclstatebase {
+#include "slg/engines/pathoclbase/kernels/pathoclstatebase_datatypes.cl"
+} } }
+
+#endif
+
+#endif	/* _SLG_PATHOCLSTATEBASE_DATATYPES_H */

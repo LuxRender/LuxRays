@@ -82,14 +82,9 @@ set(SLG_KERNELS
 	${LuxRays_SOURCE_DIR}/include/slg/cameras/camera_types.cl
 	${LuxRays_SOURCE_DIR}/include/slg/cameras/camera_funcs.cl
 	${LuxRays_SOURCE_DIR}/include/slg/engines/pathoclbase/pathoclbase_funcs.cl
-	${LuxRays_SOURCE_DIR}/include/slg/engines/pathocl/kernels/pathocl_datatypes.cl
-	${LuxRays_SOURCE_DIR}/include/slg/engines/pathocl/kernels/pathocl_funcs.cl
-	${LuxRays_SOURCE_DIR}/include/slg/engines/pathocl/kernels/pathocl_kernels_micro.cl
-	${LuxRays_SOURCE_DIR}/include/slg/engines/biaspathocl/kernels/biaspathocl_datatypes.cl
-	${LuxRays_SOURCE_DIR}/include/slg/engines/biaspathocl/kernels/biaspathocl_funcs.cl
-	${LuxRays_SOURCE_DIR}/include/slg/engines/biaspathocl/kernels/biaspathocl_sampleresult_funcs.cl
-	${LuxRays_SOURCE_DIR}/include/slg/engines/biaspathocl/kernels/biaspathocl_kernels_common.cl
-	${LuxRays_SOURCE_DIR}/include/slg/engines/biaspathocl/kernels/biaspathocl_kernels_micro.cl
+	${LuxRays_SOURCE_DIR}/include/slg/engines/pathoclbase/kernels/pathoclstatebase_datatypes.cl
+	${LuxRays_SOURCE_DIR}/include/slg/engines/pathoclbase/kernels/pathoclstatebase_funcs.cl
+	${LuxRays_SOURCE_DIR}/include/slg/engines/pathoclbase/kernels/pathoclstatebase_kernels_micro.cl
 	${LuxRays_SOURCE_DIR}/include/slg/film/film_types.cl
 	${LuxRays_SOURCE_DIR}/include/slg/film/film_funcs.cl
 	${LuxRays_SOURCE_DIR}/include/slg/film/film_mergesamplebuffer_funcs.cl
@@ -209,6 +204,8 @@ set(SLG_SRCS
 	${LuxRays_SOURCE_DIR}/src/slg/engines/pathoclbase/compiletextures.cpp
 	${LuxRays_SOURCE_DIR}/src/slg/engines/pathoclbase/pathoclbase.cpp
 	${LuxRays_SOURCE_DIR}/src/slg/engines/pathoclbase/pathoclbasethread.cpp
+	${LuxRays_SOURCE_DIR}/src/slg/engines/pathoclbase/pathoclstatebase.cpp
+	${LuxRays_SOURCE_DIR}/src/slg/engines/pathoclbase/pathoclstatebasethread.cpp
 	${LuxRays_SOURCE_DIR}/src/slg/engines/pathocl/pathocl.cpp
 	${LuxRays_SOURCE_DIR}/src/slg/engines/pathocl/pathoclthread.cpp
 	${LuxRays_SOURCE_DIR}/src/slg/engines/rtpathocl/rtpathocl.cpp
@@ -305,6 +302,7 @@ set(SLG_SRCS
 	${LuxRays_SOURCE_DIR}/src/slg/samplers/sampler.cpp
 	${LuxRays_SOURCE_DIR}/src/slg/samplers/random.cpp
 	${LuxRays_SOURCE_DIR}/src/slg/samplers/rtpathcpusampler.cpp
+	${LuxRays_SOURCE_DIR}/src/slg/samplers/biaspathsampler.cpp
 	${LuxRays_SOURCE_DIR}/src/slg/samplers/sobol.cpp
 	${LuxRays_SOURCE_DIR}/src/slg/samplers/soboldata.cpp
 	${LuxRays_SOURCE_DIR}/src/slg/samplers/metropolis.cpp
@@ -367,6 +365,7 @@ set(SLG_SRCS
 	${LuxRays_SOURCE_DIR}/src/slg/utils/convtest/pdiff/lpyramid.cpp
 	${LuxRays_SOURCE_DIR}/src/slg/utils/convtest/pdiff/metric.cpp
 	${LuxRays_SOURCE_DIR}/src/slg/utils/convtest/convtest.cpp
+	${LuxRays_SOURCE_DIR}/src/slg/utils/pathdepthinfo.cpp
 	${LuxRays_SOURCE_DIR}/src/slg/utils/varianceclamping.cpp
 	${LuxRays_SOURCE_DIR}/src/slg/volumes/clear.cpp
 	${LuxRays_SOURCE_DIR}/src/slg/volumes/heterogenous.cpp
@@ -457,15 +456,9 @@ set(SLG_SRCS_KERNELS
 	${LuxRays_SOURCE_DIR}/src/slg/kernels/mapping_funcs_kernel.cpp
 	${LuxRays_SOURCE_DIR}/src/slg/kernels/hitpoint_types_kernel.cpp
 	${LuxRays_SOURCE_DIR}/src/slg/kernels/pathoclbase_funcs_kernel.cpp
-	${LuxRays_SOURCE_DIR}/src/slg/kernels/pathocl_datatypes_kernel.cpp
-	${LuxRays_SOURCE_DIR}/src/slg/kernels/pathocl_funcs_kernel.cpp
-	${LuxRays_SOURCE_DIR}/src/slg/kernels/pathocl_kernels_micro_kernel.cpp
-	${LuxRays_SOURCE_DIR}/src/slg/kernels/biaspathocl_datatypes_kernel.cpp
-	${LuxRays_SOURCE_DIR}/src/slg/kernels/biaspathocl_funcs_kernel.cpp
-	${LuxRays_SOURCE_DIR}/src/slg/kernels/biaspathocl_sampleresult_funcs_kernel.cpp
-	${LuxRays_SOURCE_DIR}/src/slg/kernels/biaspathocl_funcs_kernel.cpp
-	${LuxRays_SOURCE_DIR}/src/slg/kernels/biaspathocl_kernels_common_kernel.cpp
-	${LuxRays_SOURCE_DIR}/src/slg/kernels/biaspathocl_kernels_micro_kernel.cpp
+	${LuxRays_SOURCE_DIR}/src/slg/kernels/pathoclstatebase_datatypes_kernel.cpp
+	${LuxRays_SOURCE_DIR}/src/slg/kernels/pathoclstatebase_funcs_kernel.cpp
+	${LuxRays_SOURCE_DIR}/src/slg/kernels/pathoclstatebase_kernels_micro_kernel.cpp
 )
 SOURCE_GROUP("Source Files\\SLG Kernels" FILES ${SLG_SRCS_KERNELS})
 

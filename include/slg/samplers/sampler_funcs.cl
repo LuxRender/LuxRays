@@ -24,9 +24,6 @@
 
 #if (PARAM_SAMPLER_TYPE == 0)
 
-#define Sampler_GetSamplePath(index) (Rnd_FloatValue(seed))
-#define Sampler_GetSamplePathVertex(depth, index) (Rnd_FloatValue(seed))
-
 __global float *Sampler_GetSampleData(__global Sample *sample, __global float *samplesData) {
 	const size_t gid = get_global_id(0);
 	return &samplesData[gid * TOTAL_U_SIZE];
@@ -39,6 +36,17 @@ __global float *Sampler_GetSampleDataPathBase(__global Sample *sample, __global 
 __global float *Sampler_GetSampleDataPathVertex(__global Sample *sample,
 		__global float *sampleDataPathBase, const uint depth) {
 	return &sampleDataPathBase[IDX_BSDF_OFFSET + depth * VERTEX_SAMPLE_SIZE];
+}
+
+float Sampler_GetSamplePath(Seed *seed, __global Sample *sample,
+		__global float *sampleDataPathBase, const uint index) {
+	return Rnd_FloatValue(seed);
+}
+
+float Sampler_GetSamplePathVertex(Seed *seed, __global Sample *sample,
+		__global float *sampleDataPathVertexBase,
+		const uint depth, const uint index) {
+	return Rnd_FloatValue(seed);
 }
 
 void Sampler_SplatSample(
@@ -77,9 +85,6 @@ void Sampler_Init(Seed *seed, __global Sample *sample, __global float *sampleDat
 
 #if (PARAM_SAMPLER_TYPE == 1)
 
-#define Sampler_GetSamplePath(index) (sampleDataPathBase[index])
-#define Sampler_GetSamplePathVertex(depth, index) (sampleDataPathVertexBase[index])
-
 __global float *Sampler_GetSampleData(__global Sample *sample, __global float *samplesData) {
 	const size_t gid = get_global_id(0);
 	return &samplesData[gid * (2 * TOTAL_U_SIZE)];
@@ -92,6 +97,17 @@ __global float *Sampler_GetSampleDataPathBase(__global Sample *sample, __global 
 __global float *Sampler_GetSampleDataPathVertex(__global Sample *sample,
 		__global float *sampleDataPathBase, const uint depth) {
 	return &sampleDataPathBase[IDX_BSDF_OFFSET + depth * VERTEX_SAMPLE_SIZE];
+}
+
+float Sampler_GetSamplePath(Seed *seed, __global Sample *sample,
+		__global float *sampleDataPathBase, const uint index) {
+	return sampleDataPathBase[index];
+}
+
+float Sampler_GetSamplePathVertex(Seed *seed, __global Sample *sample,
+		__global float *sampleDataPathVertexBase,
+		const uint depth, const uint index) {
+	return sampleDataPathVertexBase[index];
 }
 
 void LargeStep(Seed *seed, __global float *proposedU) {
@@ -349,11 +365,6 @@ float SobolSampler_GetSample(__global Sample *sample, const uint index) {
 	return val - floor(val);
 }
 
-#define Sampler_GetSamplePath(index) (SobolSampler_GetSample(sample, index))
-#define Sampler_GetSamplePathVertex(depth, index) ((depth > PARAM_SAMPLER_SOBOL_MAXDEPTH) ? \
-	Rnd_FloatValue(seed) : \
-	SobolSampler_GetSample(sample, IDX_BSDF_OFFSET + (depth - 1) * VERTEX_SAMPLE_SIZE + index))
-
 __global float *Sampler_GetSampleData(__global Sample *sample, __global float *samplesData) {
 	const size_t gid = get_global_id(0);
 	return &samplesData[gid * TOTAL_U_SIZE];
@@ -366,6 +377,20 @@ __global float *Sampler_GetSampleDataPathBase(__global Sample *sample, __global 
 __global float *Sampler_GetSampleDataPathVertex(__global Sample *sample,
 		__global float *sampleDataPathBase, const uint depth) {
 	return &sampleDataPathBase[IDX_BSDF_OFFSET + depth * VERTEX_SAMPLE_SIZE];
+}
+
+float Sampler_GetSamplePath(Seed *seed, __global Sample *sample,
+		__global float *sampleDataPathBase, const uint index) {
+	return SobolSampler_GetSample(sample, index);
+}
+
+float Sampler_GetSamplePathVertex(Seed *seed, __global Sample *sample,
+		__global float *sampleDataPathVertexBase,
+		const uint depth, const uint index) {
+	if (depth <= PARAM_SAMPLER_SOBOL_MAXDEPTH)
+		return SobolSampler_GetSample(sample, IDX_BSDF_OFFSET + (depth - 1) * VERTEX_SAMPLE_SIZE + index);
+	else
+		return Rnd_FloatValue(seed);
 }
 
 void Sampler_SplatSample(
@@ -391,11 +416,7 @@ void Sampler_NextSample(
 	// Move to the next sample
 	sample->pass += get_global_size(0);
 
-	const float u0 = Sampler_GetSamplePath(IDX_SCREEN_X);
-	const float u1 = Sampler_GetSamplePath(IDX_SCREEN_Y);
-
-	sampleData[IDX_SCREEN_X] = u0;
-	sampleData[IDX_SCREEN_Y] = u1;
+	// sampleData[] is not used at all in sobol sampler
 }
 
 void Sampler_Init(Seed *seed, __global Sample *sample, __global float *sampleData) {
@@ -406,3 +427,81 @@ void Sampler_Init(Seed *seed, __global Sample *sample, __global float *sampleDat
 
 #endif
 
+//------------------------------------------------------------------------------
+// BiasPath Sampler Kernel
+//------------------------------------------------------------------------------
+
+#if (PARAM_SAMPLER_TYPE == 3)
+
+__global float *Sampler_GetSampleData(__global Sample *sample, __global float *samplesData) {
+	const size_t gid = get_global_id(0);
+	return &samplesData[gid * TOTAL_U_SIZE];
+}
+
+__global float *Sampler_GetSampleDataPathBase(__global Sample *sample, __global float *sampleData) {
+	return sampleData;
+}
+
+__global float *Sampler_GetSampleDataPathVertex(__global Sample *sample,
+		__global float *sampleDataPathBase, const uint depth) {
+	return &sampleDataPathBase[IDX_BSDF_OFFSET + depth * VERTEX_SAMPLE_SIZE];
+}
+
+float Sampler_GetSamplePath(Seed *seed, __global Sample *sample,
+		__global float *sampleDataPathBase, const uint index) {
+	return Rnd_FloatValue(seed);
+}
+
+float Sampler_GetSamplePathVertex(Seed *seed, __global Sample *sample,
+		__global float *sampleDataPathVertexBase,
+		const uint depth, const uint index) {
+	return Rnd_FloatValue(seed);
+}
+
+void Sampler_SplatSample(
+		Seed *seed,
+		__global Sample *sample,
+		__global float *sampleData
+		FILM_PARAM_DECL
+		) {
+#if defined(RENDER_ENGINE_RTBIASPATHOCL)
+	// Check if I'm in preview phase
+	if (sample->currentTilePass < PARAM_RTBIASPATHOCL_PREVIEW_RESOLUTION_REDUCTION_STEP) {
+		// I have to copy the current pixel to fill the assigned square
+		for (uint y = 0; y < PARAM_RTBIASPATHOCL_PREVIEW_RESOLUTION_REDUCTION; ++y) {
+			for (uint x = 0; x < PARAM_RTBIASPATHOCL_PREVIEW_RESOLUTION_REDUCTION; ++x) {
+				// The sample weight is very low so this value is rapidly replaced
+				// during normal rendering
+				const uint px = sample->result.pixelX + x;
+				const uint py = sample->result.pixelY + y;
+				if ((px >= 0) && (px < filmWidth) && (py >= 0) && (py < filmHeight)) {
+					Film_AddSample(px, py,
+							&sample->result, .001f
+							FILM_PARAM);
+				}
+			}
+		}
+	} else
+		Film_AddSample(sample->result.pixelX, sample->result.pixelY,
+			&sample->result, 1.f
+			FILM_PARAM);
+#else
+	Film_AddSample(sample->result.pixelX, sample->result.pixelY,
+			&sample->result, 1.f
+			FILM_PARAM);
+#endif
+}
+
+void Sampler_NextSample(
+		Seed *seed,
+		__global Sample *sample,
+		__global float *sampleData
+		) {
+	// sampleData[] is not used at all in random sampler
+}
+
+void Sampler_Init(Seed *seed, __global Sample *sample, __global float *sampleData) {
+	Sampler_NextSample(seed, sample, sampleData);
+}
+
+#endif
