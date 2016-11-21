@@ -209,7 +209,7 @@ void Scene::DefineDensityGrid(const std::string &name, DensityGrid *dg) {
 	densityGridCache.DefineDensityGrid(name, dg);
 
 	editActions.AddAction(DENSITYGRIDS_EDIT);
-};
+}
 
 bool Scene::IsImageMapDefined(const string &imgMapName) const {
 	return imgMapCache.IsImageMapDefined(imgMapName);

@@ -42,14 +42,14 @@ const float DensityGridStorage::GetFloat(const u_int index) const {
 	assert(index < nx * ny * nz);
 
 	return voxels[index];
-};
+}
 
 const luxrays::Spectrum DensityGridStorage::GetSpectrum(const u_int index) const {
 	assert(index >= 0);
 	assert(index < nx * ny * nz);
 
 	return luxrays::Spectrum(voxels[index]);
-};
+}
 
 const float DensityGridStorage::GetVoxel(const int s, const int t, const int u) const  {
 	const u_int index = ((luxrays::Clamp<int>(u, 0, nz - 1) * ny) + luxrays::Clamp<int>(t, 0, ny - 1)) * nx + luxrays::Clamp<int>(s, 0, nx - 1);
@@ -58,9 +58,7 @@ const float DensityGridStorage::GetVoxel(const int s, const int t, const int u) 
 	assert(index < nx * ny * nz);
 
 	return voxels[index];
-};
-
-
+}
 
 //------------------------------------------------------------------------------
 // DensityGrid
@@ -86,7 +84,6 @@ float DensityGrid::GetFloat(const u_int x, const u_int y, const u_int z) const {
 
 	return GetStorage()->GetFloat(index);
 }
-
 
 Properties DensityGrid::ToProperties(const std::string &prefix) const {
 	Properties props;

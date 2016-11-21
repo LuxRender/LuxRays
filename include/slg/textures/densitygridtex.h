@@ -23,10 +23,10 @@
 
 namespace slg {
 
-
 //------------------------------------------------------------------------------
 // DensityGrid texture
 //------------------------------------------------------------------------------
+
 class DensityGridTexture : public Texture {
 public:
 	DensityGridTexture(const TextureMapping3D *mp, const DensityGrid *dg);

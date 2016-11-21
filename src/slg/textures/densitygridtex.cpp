@@ -26,7 +26,8 @@ using namespace slg;
 // Densitygrid texture
 //------------------------------------------------------------------------------
 
-DensityGridTexture::DensityGridTexture(const TextureMapping3D *mp, const DensityGrid *dg) : mapping(mp), densityGrid(dg) {
+DensityGridTexture::DensityGridTexture(const TextureMapping3D *mp, const DensityGrid *dg) :
+		densityGrid(dg), mapping(mp) {
 
 }
 
